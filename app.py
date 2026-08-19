@@ -29,7 +29,7 @@ ACTIVITY_LOG = DATA / "activity.log"
 
 
 # ============================================================
-# DEFAULT CONFIG
+# DEFAULT CONFIGURATION
 # ============================================================
 
 DEFAULT_CFG = {
@@ -100,7 +100,9 @@ STATE = {
 def load(path, default):
     """
     Load JSON file.
+
     If it doesn't exist, create it using the supplied default.
+    If the JSON is invalid, return the default.
     """
 
     if not path.exists():
@@ -115,7 +117,9 @@ def load(path, default):
 
     try:
         return json.loads(
-            path.read_text(encoding="utf-8")
+            path.read_text(
+                encoding="utf-8"
+            )
         )
 
     except Exception:
@@ -124,7 +128,7 @@ def load(path, default):
 
 def save(path, obj):
     """
-    Save JSON safely.
+    Save JSON file.
     """
 
     path.write_text(
@@ -156,6 +160,7 @@ def log(message):
         "a",
         encoding="utf-8"
     ) as f:
+
         f.write(
             f"[{timestamp}] {message}\n"
         )
@@ -269,7 +274,6 @@ Product links may be affiliate links.
 Prices and availability can change.
 """
 
-
     safe_name = (
         product["name"]
         .replace(" ", "_")
@@ -293,7 +297,7 @@ Prices and availability can change.
 
 
 # ============================================================
-# DAILY AUTOPILOT
+# DAILY AUTOPILOT WORKER
 # ============================================================
 
 def cycle():
@@ -302,27 +306,35 @@ def cycle():
 
     When enabled:
     - Loads products
-    - Creates the configured number of drafts
+    - Creates configured number of drafts
     - Waits approximately 24 hours / posts_per_day
     - Repeats
     """
 
-    log("Autopilot worker started.")
+    log(
+        "Autopilot worker started."
+    )
 
     while True:
 
         try:
+
             cfg = load(
                 CFG,
                 DEFAULT_CFG
             )
 
             enabled = bool(
-                cfg.get("enabled", False)
+                cfg.get(
+                    "enabled",
+                    False
+                )
             )
 
             if not enabled:
+
                 time.sleep(2)
+
                 continue
 
 
@@ -336,16 +348,22 @@ def cycle():
             )
 
             if not products:
-                log("No products available.")
+
+                log(
+                    "No products available."
+                )
+
                 time.sleep(10)
+
                 continue
 
 
             # ------------------------------------------------
-            # Number of posts
+            # Number of posts per day
             # ------------------------------------------------
 
             try:
+
                 posts_per_day = int(
                     cfg.get(
                         "posts_per_day",
@@ -354,6 +372,7 @@ def cycle():
                 )
 
             except Exception:
+
                 posts_per_day = 3
 
 
@@ -439,6 +458,7 @@ def cycle():
                 )
             )
 
+
             # Check every second so STOP works quickly.
 
             for _ in range(interval):
@@ -454,9 +474,11 @@ def cycle():
                     "enabled",
                     False
                 ):
+
                     log(
                         "Autopilot stopped."
                     )
+
                     break
 
 
@@ -601,13 +623,13 @@ select {
 
     <button
         class="start"
-        onclick="run(1)">
+        onclick="runAutopilot(1)">
         ▶ START
     </button>
 
     <button
         class="stop"
-        onclick="run(0)">
+        onclick="runAutopilot(0)">
         ■ STOP
     </button>
 
@@ -753,25 +775,49 @@ async function getStatus() {
 }
 
 
-async function run(value) {
+async function runAutopilot(value) {
 
-    await fetch(
-        "/api/run",
-        {
-            method: "POST",
+    try {
 
-            headers: {
-                "Content-Type":
-                    "application/json"
-            },
+        const response =
+            await fetch(
+                "/api/run",
+                {
+                    method: "POST",
 
-            body: JSON.stringify({
-                enabled: value
-            })
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        enabled: value
+                    })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            alert(
+                "Unable to change autopilot status."
+            );
+
+            return;
         }
-    );
 
-    getStatus();
+
+        await getStatus();
+
+    }
+
+    catch (error) {
+
+        alert(
+            "Connection error."
+        );
+
+    }
 
 }
 
@@ -796,41 +842,69 @@ async function saveSettings() {
         document.getElementById("t").value;
 
 
-    await fetch(
-        "/api/config",
-        {
-            method: "POST",
+    try {
 
-            headers: {
-                "Content-Type":
-                    "application/json"
-            },
+        const response =
+            await fetch(
+                "/api/config",
+                {
+                    method: "POST",
 
-            body: JSON.stringify({
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
 
-                posts_per_day: posts,
+                    body: JSON.stringify({
 
-                mode: mode,
+                        posts_per_day:
+                            posts,
 
-                instagram_business_account_id:
-                    account,
+                        mode:
+                            mode,
 
-                meta_access_token:
-                    token
+                        instagram_business_account_id:
+                            account,
 
-            })
+                        meta_access_token:
+                            token
+
+                    })
+                }
+            );
+
+
+        if (!response.ok) {
+
+            alert(
+                "Unable to save settings."
+            );
+
+            return;
         }
-    );
 
 
-    alert("Settings saved.");
+        alert(
+            "Settings saved."
+        );
 
-    getStatus();
+        getStatus();
+
+    }
+
+    catch (error) {
+
+        alert(
+            "Connection error."
+        );
+
+    }
 
 }
 
 
 getStatus();
+
 
 setInterval(
     getStatus,
@@ -919,11 +993,15 @@ async def run(
 
     if enabled:
 
-        log("START pressed.")
+        log(
+            "START pressed."
+        )
 
     else:
 
-        log("STOP pressed.")
+        log(
+            "STOP pressed."
+        )
 
 
     return {
@@ -964,7 +1042,9 @@ async def config(
             cfg[key] = body[key]
 
 
+    # --------------------------------------------------------
     # Validate posts per day
+    # --------------------------------------------------------
 
     try:
 
@@ -988,7 +1068,9 @@ async def config(
         cfg["posts_per_day"] = 3
 
 
+    # --------------------------------------------------------
     # Validate mode
+    # --------------------------------------------------------
 
     if cfg.get("mode") not in [
         "draft",
@@ -1023,16 +1105,18 @@ def health():
     return {
         "ok": True,
         "service": "waititsonsale-autopilot"
+    }
 
 
 # ============================================================
-# STARTUP
+# FASTAPI STARTUP
 # ============================================================
 
 @app.on_event("startup")
 def startup():
 
-    # Make sure files exist
+    # Make sure required files exist
+
     load(
         CFG,
         DEFAULT_CFG
@@ -1043,7 +1127,9 @@ def startup():
         DEFAULT_PRODUCTS
     )
 
+
     # Start background autopilot worker
+
     worker = threading.Thread(
         target=cycle,
         daemon=True
@@ -1051,7 +1137,10 @@ def startup():
 
     worker.start()
 
-    log("Autopilot worker started.")
+
+    log(
+        "Autopilot worker started."
+    )
 
 
 # ============================================================
@@ -1071,4 +1160,4 @@ if __name__ == "__main__":
                 "8080"
             )
         )
-    )
+)
