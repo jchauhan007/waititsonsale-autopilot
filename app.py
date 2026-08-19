@@ -1023,20 +1023,16 @@ def health():
     return {
         "ok": True,
         "service": "waititsonsale-autopilot"
-    }
 
 
 # ============================================================
 # STARTUP
 # ============================================================
 
-if __name__ == "__main__":
-
-    import uvicorn
-
+@app.on_event("startup")
+def startup():
 
     # Make sure files exist
-
     load(
         CFG,
         DEFAULT_CFG
@@ -1047,9 +1043,7 @@ if __name__ == "__main__":
         DEFAULT_PRODUCTS
     )
 
-
-    # Start background autopilot
-
+    # Start background autopilot worker
     worker = threading.Thread(
         target=cycle,
         daemon=True
@@ -1057,8 +1051,16 @@ if __name__ == "__main__":
 
     worker.start()
 
+    log("Autopilot worker started.")
 
-    # Start FastAPI
+
+# ============================================================
+# LOCAL DEVELOPMENT
+# ============================================================
+
+if __name__ == "__main__":
+
+    import uvicorn
 
     uvicorn.run(
         app,
@@ -1069,4 +1071,4 @@ if __name__ == "__main__":
                 "8080"
             )
         )
-)
+    )
