@@ -1,1 +1,8 @@
-
+{
+  "handle": "@waititsonsale",
+  "posts_per_day": 3,
+  "enabled": false,
+  "mode": "draft",
+  "meta_access_token": "",
+  "instagram_business_account_id": ""
+}
