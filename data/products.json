@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Motion Sensor Night Light",
+    "price": "₹349",
+    "category": "Home",
+    "why": "an instant visual before/after with a clear everyday use case"
+  },
+  {
+    "name": "Foldable Laptop Stand",
+    "price": "₹399",
+    "category": "Desk",
+    "why": "a simple productivity upgrade that is easy to demonstrate"
+  },
+  {
+    "name": "Portable Mini Chopper",
+    "price": "₹499",
+    "category": "Kitchen",
+    "why": "strong visual demo potential and broad household appeal"
+  },
+  {
+    "name": "Magnetic Cable Organizer",
+    "price": "₹199",
+    "category": "Tech",
+    "why": "solves a common desk problem at a low price"
+  },
+  {
+    "name": "Mini Electric Cleaning Brush",
+    "price": "₹299",
+    "category": "Home",
+    "why": "satisfying cleaning demonstration potential"
+  }
+]
