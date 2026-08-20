@@ -22,13 +22,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 BASE = Path(__file__).parent
 
 DATA = BASE / "data"
-DATA.mkdir(exist_ok=True)
+DATA.mkdir(parents=True, exist_ok=True)
 
 CFG = DATA / "config.json"
 QUEUE = DATA / "products.json"
 
 DRAFTS = DATA / "drafts"
-DRAFTS.mkdir(exist_ok=True)
+DRAFTS.mkdir(parents=True, exist_ok=True)
 
 ACTIVITY_LOG = DATA / "activity.log"
 
@@ -48,9 +48,6 @@ DEFAULT_CFG = {
 
     "voice": "en-IN-NeerjaNeural",
 
-    # IMPORTANT:
-    # 720x1280 is much safer for Render's 512 MB instance.
-    # Instagram/Reels still accepts 9:16.
     "video_width": 720,
 
     "video_height": 1280,
@@ -136,14 +133,15 @@ def load(path, default):
         save(path, default)
 
     try:
-
         return json.loads(
-            path.read_text(
-                encoding="utf-8"
-            )
+            path.read_text(encoding="utf-8")
         )
 
-    except Exception:
+    except Exception as e:
+
+        log(
+            f"Could not load {path.name}: {e}"
+        )
 
         return default
 
@@ -171,7 +169,7 @@ def save(path, obj):
 
 def log(message):
 
-    STATE["message"] = message
+    STATE["message"] = str(message)
 
     timestamp = datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"
@@ -211,42 +209,37 @@ def clean_filename(value):
 
 def escape_ffmpeg_text(text):
 
+    """
+    Safely escape text for FFmpeg drawtext.
+
+    FFmpeg drawtext is extremely sensitive to:
+    :
+    ,
+    '
+    \
+    %
+    [
+    ]
+    ;
+    """
+
     text = str(text)
 
-    text = text.replace(
-        "\\",
-        "\\\\"
-    )
+    replacements = [
+        ("\\", r"\\"),
+        (":", r"\:"),
+        (",", r"\,"),
+        ("'", r"\'"),
+        ("%", r"\%"),
+        ("[", r"\["),
+        ("]", r"\]"),
+        (";", r"\;"),
+        ("\n", " "),
+        ("\r", " ")
+    ]
 
-    text = text.replace(
-        ":",
-        "\\:"
-    )
-
-    text = text.replace(
-        "'",
-        "\\'"
-    )
-
-    text = text.replace(
-        "%",
-        "\\%"
-    )
-
-    text = text.replace(
-        "[",
-        "\\["
-    )
-
-    text = text.replace(
-        "]",
-        "\\]"
-    )
-
-    text = text.replace(
-        "\n",
-        " "
-    )
+    for old, new in replacements:
+        text = text.replace(old, new)
 
     return text
 
@@ -279,6 +272,174 @@ def wrap_text(text, width=28):
         lines.append(current)
 
     return "\n".join(lines)
+
+
+# ============================================================
+# FFMPEG / FFPROBE
+# ============================================================
+
+def ffmpeg_available():
+
+    return shutil.which("ffmpeg") is not None
+
+
+def ffprobe_available():
+
+    return shutil.which("ffprobe") is not None
+
+
+def find_font():
+
+    possible_fonts = [
+
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+
+        "/usr/share/fonts/truetype/liberation2/"
+        "LiberationSans-Bold.ttf",
+
+        "/usr/share/fonts/truetype/liberation/"
+        "LiberationSans-Bold.ttf"
+
+    ]
+
+    for font in possible_fonts:
+
+        if Path(font).exists():
+            return font
+
+    return None
+
+
+def verify_video(path):
+
+    """
+    Make sure the file is actually a usable MP4.
+    """
+
+    try:
+
+        if not path.exists():
+            return False
+
+        size = path.stat().st_size
+
+        if size < 10_000:
+            log(
+                f"Video validation failed: file only {size} bytes."
+            )
+            return False
+
+        if not ffprobe_available():
+
+            # Basic MP4 signature check.
+            with path.open("rb") as f:
+                header = f.read(32)
+
+            if b"ftyp" not in header:
+                log(
+                    "Video validation failed: MP4 header missing."
+                )
+                return False
+
+            return True
+
+        result = subprocess.run(
+
+            [
+                "ffprobe",
+
+                "-v",
+                "error",
+
+                "-show_entries",
+                "format=duration,size",
+
+                "-of",
+                "json",
+
+                str(path)
+            ],
+
+            stdout=subprocess.PIPE,
+
+            stderr=subprocess.PIPE,
+
+            timeout=30
+
+        )
+
+        if result.returncode != 0:
+
+            error = result.stderr.decode(
+                "utf-8",
+                errors="ignore"
+            )
+
+            log(
+                "ffprobe validation failed: "
+                + error[-1000:]
+            )
+
+            return False
+
+        data = json.loads(
+            result.stdout.decode(
+                "utf-8",
+                errors="ignore"
+            )
+        )
+
+        fmt = data.get(
+            "format",
+            {}
+        )
+
+        duration = float(
+            fmt.get(
+                "duration",
+                0
+            )
+        )
+
+        filesize = float(
+            fmt.get(
+                "size",
+                0
+            )
+        )
+
+        if duration <= 0:
+            log(
+                "Video validation failed: duration is zero."
+            )
+            return False
+
+        if filesize < 10_000:
+            log(
+                "Video validation failed: file size is too small."
+            )
+            return False
+
+        log(
+            f"Video verified: {duration:.2f}s / "
+            f"{filesize / 1024:.1f} KB"
+        )
+
+        return True
+
+    except Exception as e:
+
+        log(
+            f"Video verification error: {e}"
+        )
+
+        return False
 
 
 # ============================================================
@@ -316,17 +477,6 @@ def random_hook(product):
 
 
 # ============================================================
-# CHECK FFMPEG
-# ============================================================
-
-def ffmpeg_available():
-
-    return shutil.which(
-        "ffmpeg"
-    ) is not None
-
-
-# ============================================================
 # DOWNLOAD IMAGE
 # ============================================================
 
@@ -352,8 +502,22 @@ def download_image(url, destination):
 
             data = response.read()
 
+        if not data:
+            return None
+
         destination.write_bytes(
             data
+        )
+
+        if destination.stat().st_size < 100:
+            destination.unlink(
+                missing_ok=True
+            )
+            return None
+
+        log(
+            f"Product image downloaded: "
+            f"{destination.stat().st_size} bytes"
         )
 
         return destination
@@ -363,6 +527,13 @@ def download_image(url, destination):
         log(
             f"Image download failed: {e}"
         )
+
+        try:
+            destination.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
         return None
 
@@ -391,8 +562,6 @@ def create_placeholder_image(
         return None
 
 
-    # Smaller image to reduce memory usage.
-
     width = 720
     height = 1280
 
@@ -408,22 +577,33 @@ def create_placeholder_image(
     )
 
 
+    font_path = find_font()
+
+
     try:
 
-        font_large = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            52
-        )
+        if font_path:
 
-        font_medium = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            34
-        )
+            font_large = ImageFont.truetype(
+                font_path,
+                52
+            )
 
-        font_small = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            28
-        )
+            font_medium = ImageFont.truetype(
+                font_path,
+                34
+            )
+
+            font_small = ImageFont.truetype(
+                font_path,
+                28
+            )
+
+        else:
+
+            font_large = None
+            font_medium = None
+            font_small = None
 
     except Exception:
 
@@ -455,8 +635,6 @@ def create_placeholder_image(
         font=font_medium
     )
 
-
-    # Product card
 
     card_x1 = 45
     card_y1 = 380
@@ -520,6 +698,7 @@ def create_placeholder_image(
         font=font_medium
     )
 
+
     draw.text(
         (50, 1025),
         "SAVE THIS REEL",
@@ -533,6 +712,18 @@ def create_placeholder_image(
         "JPEG",
         quality=88,
         optimize=True
+    )
+
+
+    if not output.exists():
+        return None
+
+    if output.stat().st_size < 1_000:
+        return None
+
+    log(
+        f"Placeholder image created: "
+        f"{output.stat().st_size} bytes"
     )
 
     return output
@@ -561,7 +752,20 @@ async def generate_tts_async(
             str(output)
         )
 
-        return True
+        if output.exists() and output.stat().st_size > 1_000:
+
+            log(
+                f"Voiceover created: "
+                f"{output.stat().st_size} bytes"
+            )
+
+            return True
+
+        log(
+            "TTS returned but audio file is empty."
+        )
+
+        return False
 
     except Exception as e:
 
@@ -599,24 +803,6 @@ def generate_voiceover(
 
 # ============================================================
 # VIDEO GENERATOR
-# ============================================================
-#
-# IMPORTANT MEMORY OPTIMIZATION
-#
-# The old version created:
-#
-#   silent.mp4
-#       ↓
-#   overlay.mp4
-#       ↓
-#   final video.mp4
-#
-# That can push a 512 MB Render instance over the limit.
-#
-# This version creates ONE FFmpeg process and ONE output file.
-#
-# FFmpeg is also limited to one thread.
-#
 # ============================================================
 
 def create_video(
@@ -669,51 +855,133 @@ def create_video(
 
 
     # --------------------------------------------------------
-    # Build text overlay filters
+    # Validate image
     # --------------------------------------------------------
 
-    filter_parts = []
+    if not image_path.exists():
+
+        log(
+            "FFmpeg stopped: image does not exist."
+        )
+
+        return False
+
+
+    if image_path.stat().st_size < 1_000:
+
+        log(
+            "FFmpeg stopped: image is empty."
+        )
+
+        return False
+
+
+    # --------------------------------------------------------
+    # Find font
+    # --------------------------------------------------------
+
+    font = find_font()
+
+    if not font:
+
+        log(
+            "WARNING: DejaVu font not found. "
+            "Trying FFmpeg's default font handling."
+        )
+
+
+    # --------------------------------------------------------
+    # Build video filter
+    # --------------------------------------------------------
+
+    filter_parts = [
+
+        f"scale={width}:{height}:"
+        "force_original_aspect_ratio=decrease",
+
+        f"pad={width}:{height}:"
+        "(ow-iw)/2:(oh-ih)/2",
+
+        "setsar=1"
+
+    ]
+
 
     current = 0
 
 
-    for index, scene in enumerate(
-        scenes
-    ):
+    for index, scene in enumerate(scenes):
+
+        if index >= len(durations):
+            break
+
 
         text = escape_ffmpeg_text(
-            scene["on_screen_text"]
+            scene.get(
+                "on_screen_text",
+                ""
+            )
         )
+
 
         start = current
 
         end = current + durations[index]
 
 
+        if font:
+
+            drawtext = (
+
+                "drawtext="
+
+                f"fontfile='{font}':"
+
+                f"text='{text}':"
+
+                "fontcolor=white:"
+
+                "fontsize=42:"
+
+                "borderw=3:"
+
+                "bordercolor=black:"
+
+                "x=(w-text_w)/2:"
+
+                "y=h*0.78:"
+
+                f"enable='between(t,{start},{end})'"
+
+            )
+
+        else:
+
+            drawtext = (
+
+                "drawtext="
+
+                f"text='{text}':"
+
+                "fontcolor=white:"
+
+                "fontsize=42:"
+
+                "borderw=3:"
+
+                "bordercolor=black:"
+
+                "x=(w-text_w)/2:"
+
+                "y=h*0.78:"
+
+                f"enable='between(t,{start},{end})'"
+
+            )
+
+
         filter_parts.append(
-
-            "drawtext="
-
-            "fontfile=/usr/share/fonts/"
-            "truetype/dejavu/"
-            "DejaVuSans-Bold.ttf:"
-
-            f"text='{text}':"
-
-            "fontcolor=white:"
-
-            "fontsize=42:"
-
-            "borderw=3:"
-
-            "bordercolor=black:"
-
-            "x=(w-text_w)/2:"
-
-            "y=h*0.78:"
-
-            f"enable='between(t,{start},{end})'"
-
+            drawtext
         )
 
 
@@ -731,29 +999,78 @@ def create_video(
 
 
     # --------------------------------------------------------
-    # Single FFmpeg command
+    # IMPORTANT:
+    #
+    # Never write directly to video.mp4.
+    #
+    # FFmpeg writes to:
+    #
+    #     video.mp4.tmp
+    #
+    # Then we validate it.
+    #
+    # Only after successful validation:
+    #
+    #     video.mp4
+    #
+    # is created.
+    # --------------------------------------------------------
+
+    temp_output = output_path.with_suffix(
+        ".mp4.tmp"
+    )
+
+
+    try:
+
+        temp_output.unlink(
+            missing_ok=True
+        )
+
+    except Exception:
+        pass
+
+
+    # --------------------------------------------------------
+    # FFmpeg command
     # --------------------------------------------------------
 
     cmd = [
 
         "ffmpeg",
 
+        "-hide_banner",
+
+        "-loglevel",
+        "error",
+
         "-y",
 
-        # Limit FFmpeg memory/CPU usage.
         "-threads",
         "1",
 
         "-loop",
         "1",
 
+        "-framerate",
+        str(fps),
+
         "-i",
-        str(image_path),
+        str(image_path)
 
     ]
 
 
-    if audio_path and audio_path.exists():
+    has_audio = (
+
+        audio_path is not None
+        and audio_path.exists()
+        and audio_path.stat().st_size > 1_000
+
+    )
+
+
+    if has_audio:
 
         cmd.extend([
 
@@ -771,13 +1088,15 @@ def create_video(
         "-filter_complex",
         filter_complex,
 
+        "-map",
+        "0:v:0",
+
         "-r",
         str(fps),
 
         "-c:v",
         "libx264",
 
-        # Ultrafast uses less CPU/memory.
         "-preset",
         "ultrafast",
 
@@ -787,18 +1106,15 @@ def create_video(
         "-pix_fmt",
         "yuv420p",
 
-        "-threads",
-        "1"
+        "-movflags",
+        "+faststart"
 
     ])
 
 
-    if audio_path and audio_path.exists():
+    if has_audio:
 
         cmd.extend([
-
-            "-map",
-            "0:v:0",
 
             "-map",
             "1:a:0",
@@ -809,18 +1125,27 @@ def create_video(
             "-b:a",
             "96k",
 
-            "-shortest"
+            "-ar",
+            "44100",
+
+            "-ac",
+            "2"
 
         ])
 
 
     cmd.append(
-        str(output_path)
+        str(temp_output)
     )
 
 
     log(
-        "Creating video with memory-optimized FFmpeg..."
+        "Starting FFmpeg video generation..."
+    )
+
+
+    log(
+        "FFmpeg command started."
     )
 
 
@@ -829,8 +1154,6 @@ def create_video(
         result = subprocess.run(
 
             cmd,
-
-            check=True,
 
             stdout=subprocess.PIPE,
 
@@ -841,36 +1164,149 @@ def create_video(
         )
 
 
-        if output_path.exists():
+        stderr = result.stderr.decode(
+            "utf-8",
+            errors="ignore"
+        )
+
+
+        stdout = result.stdout.decode(
+            "utf-8",
+            errors="ignore"
+        )
+
+
+        if result.returncode != 0:
 
             log(
-                "Video created successfully."
+                "FFmpeg FAILED:"
             )
 
-            return True
+            log(
+                stderr[-4000:]
+            )
+
+            try:
+                temp_output.unlink(
+                    missing_ok=True
+                )
+            except Exception:
+                pass
+
+            return False
+
+
+        if not temp_output.exists():
+
+            log(
+                "FFmpeg reported success but "
+                "output file does not exist."
+            )
+
+            return False
+
+
+        temp_size = temp_output.stat().st_size
+
+
+        log(
+            f"FFmpeg produced temporary file: "
+            f"{temp_size} bytes"
+        )
+
+
+        if temp_size < 10_000:
+
+            log(
+                "FFmpeg produced an empty/tiny video."
+            )
+
+            try:
+                temp_output.unlink(
+                    missing_ok=True
+                )
+            except Exception:
+                pass
+
+            return False
+
+
+        # ----------------------------------------------------
+        # Validate before publishing as video.mp4
+        # ----------------------------------------------------
+
+        if not verify_video(temp_output):
+
+            log(
+                "Temporary video failed validation."
+            )
+
+            try:
+                temp_output.unlink(
+                    missing_ok=True
+                )
+            except Exception:
+                pass
+
+            return False
+
+
+        # ----------------------------------------------------
+        # Atomic rename
+        # ----------------------------------------------------
+
+        output_path.unlink(
+            missing_ok=True
+        )
+
+
+        os.replace(
+            temp_output,
+            output_path
+        )
+
+
+        final_size = output_path.stat().st_size
+
+
+        if final_size < 10_000:
+
+            log(
+                "Final video is unexpectedly small."
+            )
+
+            output_path.unlink(
+                missing_ok=True
+            )
+
+            return False
+
+
+        log(
+            f"VIDEO CREATED SUCCESSFULLY: "
+            f"{output_path.name} "
+            f"({final_size / 1024 / 1024:.2f} MB)"
+        )
+
+
+        return True
 
 
     except subprocess.TimeoutExpired:
 
         log(
-            "FFmpeg timed out."
+            "FFmpeg timed out after 300 seconds."
         )
 
-    except subprocess.CalledProcessError as e:
-
-        error_text = (
-            e.stderr.decode(
-                "utf-8",
-                errors="ignore"
+        try:
+            temp_output.unlink(
+                missing_ok=True
             )
-            if e.stderr
-            else "Unknown FFmpeg error"
-        )
+        except Exception:
+            pass
 
-        log(
-            "FFmpeg failed: "
-            + error_text[-1200:]
-        )
+        return False
+
 
     except Exception as e:
 
@@ -878,8 +1314,14 @@ def create_video(
             f"Video generation error: {e}"
         )
 
+        try:
+            temp_output.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
-    return False
+        return False
 
 
 # ============================================================
@@ -888,7 +1330,17 @@ def create_video(
 
 def create_reel_package(product):
 
+    if STATE["creating"]:
+
+        log(
+            "A Reel is already being created. Skipping."
+        )
+
+        return None
+
+
     STATE["creating"] = True
+
 
     try:
 
@@ -1194,6 +1646,7 @@ Prices and availability can change.
                 "product": product,
                 "duration_seconds": 17,
                 "format": "9:16",
+                "resolution": "720x1280",
                 "scenes": scenes
             }
         )
@@ -1368,7 +1821,13 @@ Price and availability must be checked before publishing.
         )
 
 
-        if ffmpeg_available():
+        if not ffmpeg_available():
+
+            log(
+                "FFmpeg is NOT installed."
+            )
+
+        else:
 
             success = create_video(
 
@@ -1392,17 +1851,62 @@ Price and availability must be checked before publishing.
             if not success:
 
                 log(
-                    "Video generation failed."
+                    "VIDEO CREATION FAILED."
                 )
+
+            else:
+
+                log(
+                    "VIDEO FILE READY."
+                )
+
+
+        # ====================================================
+        # Update metadata after video creation
+        # ====================================================
+
+        metadata_path = (
+            package_dir /
+            "metadata.json"
+        )
+
+
+        metadata = load(
+            metadata_path,
+            {}
+        )
+
+
+        if video_path.exists():
+
+            metadata["status"] = "ready"
+
+            metadata["video"] = {
+
+                "filename":
+                    "video.mp4",
+
+                "size_bytes":
+                    video_path.stat().st_size,
+
+                "valid":
+                    verify_video(video_path)
+
+            }
 
         else:
 
-            log(
-                "FFmpeg unavailable."
-            )
+            metadata["status"] = "video_failed"
+
+
+        save(
+            metadata_path,
+            metadata
+        )
 
 
         return package_dir
+
 
     finally:
 
@@ -1440,6 +1944,17 @@ def cycle():
                 "enabled",
                 False
             ):
+
+                time.sleep(2)
+
+                continue
+
+
+            # ------------------------------------------------
+            # Prevent concurrent generation
+            # ------------------------------------------------
+
+            if STATE["creating"]:
 
                 time.sleep(2)
 
@@ -1487,20 +2002,21 @@ def cycle():
 
 
             # ------------------------------------------------
-            # SELECT ONE PRODUCT
-            #
-            # IMPORTANT:
-            # We generate ONE Reel at a time.
-            # This prevents multiple FFmpeg processes
-            # from running simultaneously.
+            # SELECT PRODUCT
             # ------------------------------------------------
 
-            last_index = int(
-                cfg.get(
-                    "last_product_index",
-                    0
+            try:
+
+                last_index = int(
+                    cfg.get(
+                        "last_product_index",
+                        0
+                    )
                 )
-            )
+
+            except Exception:
+
+                last_index = 0
 
 
             product = products[
@@ -1526,7 +2042,8 @@ def cycle():
 
 
             log(
-                f"Starting Reel: {product.get('name', 'Unknown')}"
+                f"Starting Reel: "
+                f"{product.get('name', 'Unknown')}"
             )
 
 
@@ -1541,39 +2058,52 @@ def cycle():
                 )
 
 
-                STATE["created"] += 1
+                if package_dir is not None:
 
-                STATE["last_product"] = (
-                    product.get(
-                        "name",
-                        "Unknown"
+                    STATE["created"] += 1
+
+                    STATE["last_product"] = (
+                        product.get(
+                            "name",
+                            "Unknown"
+                        )
                     )
-                )
 
-
-                STATE["last_package"] = (
-                    package_dir.name
-                )
-
-
-                video_file = (
-                    package_dir /
-                    "video.mp4"
-                )
-
-
-                if video_file.exists():
-
-                    STATE["last_video"] = (
+                    STATE["last_package"] = (
                         package_dir.name
-                        + "/video.mp4"
                     )
 
 
-                log(
-                    "Reel package created: "
-                    + package_dir.name
-                )
+                    video_file = (
+                        package_dir /
+                        "video.mp4"
+                    )
+
+
+                    if (
+                        video_file.exists()
+                        and
+                        verify_video(video_file)
+                    ):
+
+                        STATE["last_video"] = (
+                            package_dir.name
+                            + "/video.mp4"
+                        )
+
+                        log(
+                            "Reel package and video "
+                            "created successfully."
+                        )
+
+                    else:
+
+                        STATE["last_video"] = None
+
+                        log(
+                            "Package created but video "
+                            "was not valid."
+                        )
 
 
             except Exception as e:
@@ -1592,7 +2122,7 @@ def cycle():
 
 
             # ------------------------------------------------
-            # DISTRIBUTE POSTS THROUGH THE DAY
+            # DISTRIBUTE POSTS THROUGH DAY
             # ------------------------------------------------
 
             interval = int(
@@ -1803,7 +2333,6 @@ select {
 
 <h1>⚡ WaitItsOnSale</h1>
 
-
 <div class="card">
 
 <div id="s"
@@ -1833,7 +2362,6 @@ onclick="run(0)">
 <div class="card">
 
 <h2>Settings</h2>
-
 
 <div class="label">
 Reels per day
@@ -1936,17 +2464,15 @@ No Reel created yet.
 </p>
 
 <p class="small">
-Optimized for Render's free 512 MB instance.
+Video generation is validated before it is marked READY.
 </p>
 
 </div>
-
 
 </div>
 
 
 <script>
-
 
 async function getStatus() {
 
@@ -1979,6 +2505,9 @@ async function getStatus() {
             + "<br>"
             + "Worker: "
             + (data.worker_running ? "Running" : "Stopped")
+            + "<br>"
+            + "Creating: "
+            + (data.creating ? "Yes" : "No")
             + "<br><br>"
             + data.message;
 
@@ -2004,7 +2533,7 @@ async function getStatus() {
 
                 '<div class="package">'
                 +
-                '<span class="badge">READY</span>'
+                '<span class="badge">PACKAGE READY</span>'
                 +
                 '<br><br>'
                 +
@@ -2049,6 +2578,18 @@ async function getStatus() {
                     '⬇ DOWNLOAD REEL'
                     +
                     '</a>';
+
+            } else {
+
+                html +=
+
+                    '<p style="color:#b00020">'
+                    +
+                    'Video generation failed. '
+                    +
+                    'Check the activity log.'
+                    +
+                    '</p>';
             }
 
 
@@ -2135,7 +2676,7 @@ async function saveSettings() {
             headers:{
                 "Content-Type":
                     "application/json"
-            },
+                },
 
             body:JSON.stringify({
 
@@ -2169,7 +2710,6 @@ setInterval(
     getStatus,
     3000
 );
-
 
 </script>
 
@@ -2252,9 +2792,13 @@ def video(
     )
 
 
-    if not str(requested).startswith(
-        str(drafts_root)
-    ):
+    try:
+
+        requested.relative_to(
+            drafts_root
+        )
+
+    except ValueError:
 
         return JSONResponse(
             {
@@ -2276,14 +2820,40 @@ def video(
         )
 
 
+    if requested.suffix.lower() != ".mp4":
+
+        return JSONResponse(
+            {
+                "error":
+                    "Only MP4 files are allowed"
+            },
+            status_code=403
+        )
+
+
+    if requested.stat().st_size < 10_000:
+
+        return JSONResponse(
+            {
+                "error":
+                    "Video file is invalid or empty"
+            },
+            status_code=500
+        )
+
+
     return FileResponse(
+
         requested,
+
         media_type="video/mp4",
+
         filename=(
             requested.name
             if download
             else None
         )
+
     )
 
 
@@ -2311,6 +2881,17 @@ def drafts():
                     "video.mp4"
                 )
 
+
+                valid_video = False
+
+
+                if video_file.exists():
+
+                    valid_video = verify_video(
+                        video_file
+                    )
+
+
                 packages.append({
 
                     "name":
@@ -2320,7 +2901,7 @@ def drafts():
                         str(folder),
 
                     "video":
-                        video_file.exists(),
+                        valid_video,
 
                     "files":
                         [
@@ -2585,6 +3166,40 @@ def products():
 
 
 # ============================================================
+# LOG
+# ============================================================
+
+@app.get("/api/log")
+def activity_log():
+
+    try:
+
+        if not ACTIVITY_LOG.exists():
+
+            return {
+                "log": ""
+            }
+
+
+        text = ACTIVITY_LOG.read_text(
+            encoding="utf-8"
+        )
+
+
+        return {
+            "log": text[-15_000:]
+        }
+
+
+    except Exception as e:
+
+        return {
+            "log":
+                f"Could not read log: {e}"
+        }
+
+
+# ============================================================
 # HEALTH
 # ============================================================
 
@@ -2600,13 +3215,22 @@ def health():
             "waititsonsale-autopilot",
 
         "version":
-            "5.0-memory-optimized",
+            "6.0-video-fixed",
 
         "ffmpeg":
             ffmpeg_available(),
 
+        "ffprobe":
+            ffprobe_available(),
+
+        "font":
+            bool(find_font()),
+
         "worker_running":
-            STATE["worker_running"]
+            STATE["worker_running"],
+
+        "creating":
+            STATE["creating"]
 
     }
 
@@ -2619,7 +3243,8 @@ def start_worker():
 
     worker = threading.Thread(
         target=cycle,
-        daemon=True
+        daemon=True,
+        name="waititsonsale-worker"
     )
 
     worker.start()
@@ -2666,4 +3291,4 @@ if __name__ == "__main__":
             )
         )
 
-    )
+                        )
