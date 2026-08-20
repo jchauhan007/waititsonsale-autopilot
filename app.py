@@ -122,6 +122,7 @@ def load(path, default):
                 encoding="utf-8"
             )
         )
+
     except Exception:
         return default
 
@@ -165,7 +166,10 @@ def log(message):
             "a",
             encoding="utf-8"
         ) as f:
-            f.write(line + "\n")
+            f.write(
+                line + "\n"
+            )
+
     except Exception:
         pass
 
@@ -214,78 +218,13 @@ def wrap_text(text, width=28):
     return "\n".join(lines)
 
 
-# ============================================================
-# IMPORTANT FFMPEG TEXT ESCAPING
-# ============================================================
-
-def escape_ffmpeg_text(text):
+def escape_filter_path(path):
     """
-    Escape text for FFmpeg drawtext.
+    Escape a filesystem path for FFmpeg filter arguments.
 
-    IMPORTANT:
-    We intentionally DO NOT wrap the text in single quotes.
-
-    This prevents text such as:
-        don't
-        it's
-        you're
-
-    from breaking the FFmpeg filter parser.
-    """
-
-    text = str(text)
-
-    text = text.replace(
-        "\\",
-        "\\\\"
-    )
-
-    text = text.replace(
-        ":",
-        "\\:"
-    )
-
-    text = text.replace(
-        ",",
-        "\\,"
-    )
-
-    text = text.replace(
-        "'",
-        "\\'"
-    )
-
-    text = text.replace(
-        "%",
-        "\\%"
-    )
-
-    text = text.replace(
-        "[",
-        "\\["
-    )
-
-    text = text.replace(
-        "]",
-        "\\]"
-    )
-
-    text = text.replace(
-        "\n",
-        " "
-    )
-
-    text = text.replace(
-        "\r",
-        " "
-    )
-
-    return text
-
-
-def escape_ffmpeg_path(path):
-    """
-    Escape a filesystem path for an FFmpeg filter option.
+    We use textfile= instead of text= for drawtext.
+    This avoids problems with commas, colons and quotes
+    inside the actual scene text.
     """
 
     value = str(path)
@@ -301,16 +240,33 @@ def escape_ffmpeg_path(path):
     )
 
     value = value.replace(
-        ",",
-        "\\,"
-    )
-
-    value = value.replace(
         "'",
         "\\'"
     )
 
     return value
+
+
+def find_font():
+    possible_fonts = [
+
+        "/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans-Bold.ttf",
+
+        "/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans.ttf",
+
+        "/usr/share/fonts/truetype/liberation2/"
+        "LiberationSans-Bold.ttf",
+
+    ]
+
+    for font in possible_fonts:
+
+        if Path(font).exists():
+            return font
+
+    return None
 
 
 # ============================================================
@@ -349,13 +305,15 @@ def get_ffmpeg_version():
         lines = result.stdout.splitlines()
 
         if not lines:
-            return "Unknown FFmpeg version"
+            return "FFmpeg version unavailable"
 
         return lines[0]
 
     except Exception as e:
 
-        return f"FFmpeg version error: {e}"
+        return (
+            f"FFmpeg version error: {e}"
+        )
 
 
 # ============================================================
@@ -391,14 +349,19 @@ def random_hook(product):
 
     ]
 
-    return random.choice(hooks)
+    return random.choice(
+        hooks
+    )
 
 
 # ============================================================
 # IMAGE DOWNLOAD
 # ============================================================
 
-def download_image(url, destination):
+def download_image(
+    url,
+    destination
+):
 
     if not url:
         return None
@@ -412,7 +375,8 @@ def download_image(url, destination):
         request = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "Mozilla/5.0"
+                "User-Agent":
+                    "Mozilla/5.0"
             }
         )
 
@@ -464,7 +428,11 @@ def create_placeholder_image(
 
     try:
 
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import (
+            Image,
+            ImageDraw,
+            ImageFont
+        )
 
     except Exception as e:
 
@@ -481,7 +449,10 @@ def create_placeholder_image(
 
         image = Image.new(
             "RGB",
-            (width, height),
+            (
+                width,
+                height
+            ),
             (245, 245, 245)
         )
 
@@ -490,17 +461,13 @@ def create_placeholder_image(
         )
 
         font_path = (
-            "/usr/share/fonts/"
-            "truetype/"
-            "dejavu/"
-            "DejaVuSans-Bold.ttf"
+            "/usr/share/fonts/truetype/"
+            "dejavu/DejaVuSans-Bold.ttf"
         )
 
         normal_path = (
-            "/usr/share/fonts/"
-            "truetype/"
-            "dejavu/"
-            "DejaVuSans.ttf"
+            "/usr/share/fonts/truetype/"
+            "dejavu/DejaVuSans.ttf"
         )
 
         try:
@@ -556,7 +523,12 @@ def create_placeholder_image(
         )
 
         draw.rounded_rectangle(
-            (40, 330, 680, 870),
+            (
+                40,
+                330,
+                680,
+                870
+            ),
             radius=35,
             fill=(255, 255, 255),
             outline=(220, 220, 220),
@@ -679,8 +651,7 @@ async def generate_tts_async(
         if output.stat().st_size < 1000:
 
             log(
-                "TTS file was created "
-                "but is too small."
+                "TTS file was created but is too small."
             )
 
             return False
@@ -806,7 +777,8 @@ def verify_video(path):
         )
 
         log(
-            f"VIDEO VERIFY: duration={duration:.2f}s "
+            f"VIDEO VERIFY: "
+            f"duration={duration:.2f}s "
             f"size={reported_size}"
         )
 
@@ -819,6 +791,39 @@ def verify_video(path):
 
         log(
             f"VIDEO VERIFY error: {e}"
+        )
+
+        return False
+
+
+# ============================================================
+# CREATE DRAW TEXT FILE
+# ============================================================
+
+def create_scene_text_file(
+    text,
+    output
+):
+
+    try:
+
+        output.write_text(
+            str(text),
+            encoding="utf-8"
+        )
+
+        if not output.exists():
+            return False
+
+        if output.stat().st_size == 0:
+            return False
+
+        return True
+
+    except Exception as e:
+
+        log(
+            f"Scene text file error: {e}"
         )
 
         return False
@@ -887,12 +892,10 @@ def create_video(
 
         return False
 
-    # ========================================================
-    # TEMP OUTPUT
-    # ========================================================
-
-    temp_output = output_path.with_suffix(
-        ".tmp.mp4"
+    temp_output = (
+        output_path.with_suffix(
+            ".tmp.mp4"
+        )
     )
 
     try:
@@ -906,13 +909,65 @@ def create_video(
     except Exception:
         pass
 
-    # ========================================================
+    # --------------------------------------------------------
+    # CREATE SCENE TEXT FILES
+    # --------------------------------------------------------
+
+    scene_files = []
+
+    for index, scene in enumerate(scenes):
+
+        text_file = (
+            output_path.parent /
+            f"scene_{index + 1}.txt"
+        )
+
+        text = scene.get(
+            "on_screen_text",
+            ""
+        )
+
+        if not create_scene_text_file(
+            text,
+            text_file
+        ):
+
+            log(
+                f"Could not create scene text file "
+                f"{index + 1}"
+            )
+
+            return False
+
+        scene_files.append(
+            text_file
+        )
+
+    # --------------------------------------------------------
+    # FIND FONT
+    # --------------------------------------------------------
+
+    font_path = find_font()
+
+    if not font_path:
+
+        log(
+            "WARNING: DejaVu font not found. "
+            "FFmpeg will use its default font."
+        )
+
+    # --------------------------------------------------------
     # BUILD DRAW TEXT FILTERS
-    # ========================================================
+    #
+    # IMPORTANT:
+    # Scene text is NOT passed through text=.
+    # It is read using textfile=.
+    #
+    # The timing commas are escaped with \\,
+    # so FFmpeg does not treat them as filter separators.
+    # --------------------------------------------------------
 
     filters = []
-
-    current = 0
 
     durations = [
         3,
@@ -922,62 +977,60 @@ def create_video(
         4
     ]
 
-    for i, scene in enumerate(scenes):
+    current = 0
+
+    for index, scene in enumerate(scenes):
+
+        scene_duration = durations[index]
 
         start = current
+        end = current + scene_duration
 
-        end = (
-            current +
-            durations[i]
+        text_file = scene_files[index]
+
+        escaped_text_file = (
+            escape_filter_path(
+                text_file
+            )
         )
 
-        raw_text = scene.get(
-            "on_screen_text",
-            ""
-        )
+        if font_path:
 
-        text = escape_ffmpeg_text(
-            raw_text
-        )
+            escaped_font = (
+                escape_filter_path(
+                    font_path
+                )
+            )
 
-        # IMPORTANT:
-        #
-        # Do NOT use:
-        #
-        # text='{text}'
-        #
-        # because apostrophes in text such as
-        # "don't" can break FFmpeg.
-        #
-        # We also avoid between(t,0,3) because
-        # commas inside filter expressions can be
-        # problematic depending on parsing.
-        #
-        # Instead:
-        #
-        # enable=gte(t\,0)*lt(t\,3)
+            drawtext = (
+                "drawtext="
+                f"fontfile={escaped_font}:"
+                f"textfile={escaped_text_file}:"
+                "fontcolor=white:"
+                "fontsize=42:"
+                "borderw=4:"
+                "bordercolor=black:"
+                "x=(w-text_w)/2:"
+                "y=h*0.78:"
+                f"enable=gte(t\\,{start})*lt(t\\,{end})"
+            )
 
-        enable_expression = (
-            f"gte(t\\,{start})*lt(t\\,{end})"
-        )
+        else:
 
-        drawtext_filter = (
-            "drawtext="
-            "fontfile=/usr/share/fonts/"
-            "truetype/dejavu/"
-            "DejaVuSans-Bold.ttf:"
-            f"text={text}:"
-            "fontcolor=white:"
-            "fontsize=42:"
-            "borderw=4:"
-            "bordercolor=black:"
-            "x=(w-text_w)/2:"
-            "y=h*0.78:"
-            f"enable={enable_expression}"
-        )
+            drawtext = (
+                "drawtext="
+                f"textfile={escaped_text_file}:"
+                "fontcolor=white:"
+                "fontsize=42:"
+                "borderw=4:"
+                "bordercolor=black:"
+                "x=(w-text_w)/2:"
+                "y=h*0.78:"
+                f"enable=gte(t\\,{start})*lt(t\\,{end})"
+            )
 
         filters.append(
-            drawtext_filter
+            drawtext
         )
 
         current = end
@@ -990,16 +1043,14 @@ def create_video(
         filters
     )
 
-    # ========================================================
-    # FFMPEG COMMAND
-    # ========================================================
+    # --------------------------------------------------------
+    # FFmpeg COMMAND
+    # --------------------------------------------------------
 
     cmd = [
         "ffmpeg",
         "-y",
-
         "-hide_banner",
-
         "-loglevel",
         "warning",
 
@@ -1030,6 +1081,7 @@ def create_video(
         ])
 
     cmd.extend([
+
         "-t",
         str(duration),
 
@@ -1061,6 +1113,7 @@ def create_video(
     if has_audio:
 
         cmd.extend([
+
             "-map",
             "0:v:0",
 
@@ -1101,8 +1154,8 @@ def create_video(
     )
 
     log(
-        "Command: "
-        + " ".join(cmd)
+        "FFmpeg filter configuration created "
+        "using text files."
     )
 
     try:
@@ -1123,7 +1176,9 @@ def create_video(
                 result.stderr,
                 bytes
             )
-            else str(result.stderr)
+            else str(
+                result.stderr
+            )
         )
 
         if result.returncode != 0:
@@ -1133,7 +1188,7 @@ def create_video(
             )
 
             log(
-                stderr[-5000:]
+                stderr[-8000:]
             )
 
             return False
@@ -1141,8 +1196,8 @@ def create_video(
         if not temp_output.exists():
 
             log(
-                "FFmpeg returned success "
-                "but temporary video does not exist."
+                "FFmpeg returned success but "
+                "temporary video does not exist."
             )
 
             return False
@@ -1164,9 +1219,9 @@ def create_video(
 
             return False
 
-        # ====================================================
+        # ----------------------------------------------------
         # VERIFY TEMP VIDEO
-        # ====================================================
+        # ----------------------------------------------------
 
         if not verify_video(
             temp_output
@@ -1178,9 +1233,9 @@ def create_video(
 
             return False
 
-        # ====================================================
+        # ----------------------------------------------------
         # ATOMIC RENAME
-        # ====================================================
+        # ----------------------------------------------------
 
         temp_output.replace(
             output_path
@@ -1259,6 +1314,17 @@ def create_video(
             except Exception:
                 pass
 
+        # Remove temporary scene text files.
+        for text_file in scene_files:
+
+            try:
+
+                if text_file.exists():
+                    text_file.unlink()
+
+            except Exception:
+                pass
+
 
 # ============================================================
 # CREATE REEL PACKAGE
@@ -1317,77 +1383,62 @@ def create_reel_package(product):
 
             {
                 "time": "0-3s",
-
                 "visual":
                     f"Strong close-up of the {name}.",
-
                 "voiceover":
                     hook,
-
                 "on_screen_text":
                     hook
             },
 
             {
                 "time": "3-6s",
-
                 "visual":
                     f"Show the {name} from different angles.",
-
                 "voiceover":
                     (
                         f"This is the {name}, "
                         f"and it solves {why}."
                     ),
-
                 "on_screen_text":
                     name
             },
 
             {
                 "time": "6-10s",
-
                 "visual":
                     "Show the product being used.",
-
                 "voiceover":
                     (
                         "The best part is how simple "
                         "it is to use."
                     ),
-
                 "on_screen_text":
                     "Simple. Useful. Practical."
             },
 
             {
                 "time": "10-13s",
-
                 "visual":
                     "Show the result after using the product.",
-
                 "voiceover":
                     (
                         f"And at around {price}, "
                         "it could be worth checking out."
                     ),
-
                 "on_screen_text":
                     f"Example price: {price}"
             },
 
             {
                 "time": "13-17s",
-
                 "visual":
                     "Clean final product shot.",
-
                 "voiceover":
                     (
                         f"Save this for later and follow "
                         f"{handle} for more useful finds."
                     ),
-
                 "on_screen_text":
                     f"Follow {handle}"
             }
@@ -1442,7 +1493,7 @@ Prices and availability can change.
 """
 
         # ====================================================
-        # PACKAGE
+        # PACKAGE DIRECTORY
         # ====================================================
 
         timestamp = datetime.now().strftime(
@@ -1482,9 +1533,8 @@ Prices and availability can change.
             "CONCEPT",
 
             (
-                f"Fast-paced product discovery Reel "
-                f"showing why the {name} is useful "
-                f"and worth considering."
+                f"Fast-paced product discovery Reel showing why "
+                f"the {name} is useful and worth considering."
             ),
 
             "",
@@ -1705,7 +1755,9 @@ Prices and availability can change.
                 ),
 
             "video_verified":
-                bool(video_success),
+                bool(
+                    video_success
+                ),
 
             "publishing": {
 
@@ -1722,6 +1774,10 @@ Prices and availability can change.
             "metadata.json",
             metadata
         )
+
+        # ====================================================
+        # README
+        # ====================================================
 
         readme = f"""@waititsonsale
 REEL PACKAGE
@@ -1884,8 +1940,7 @@ def cycle():
                 last_index = 0
 
             product = products[
-                last_index %
-                len(products)
+                last_index % len(products)
             ]
 
             cfg["last_product_index"] = (
@@ -1904,8 +1959,10 @@ def cycle():
 
             try:
 
-                package_dir = create_reel_package(
-                    product
+                package_dir = (
+                    create_reel_package(
+                        product
+                    )
                 )
 
                 STATE["created"] += 1
@@ -1928,8 +1985,10 @@ def cycle():
 
                 if (
                     video_file.exists()
-                    and video_file.stat().st_size > 10_000
-                    and verify_video(video_file)
+                    and
+                    video_file.stat().st_size > 10_000
+                    and
+                    verify_video(video_file)
                 ):
 
                     STATE["last_video"] = (
@@ -2022,8 +2081,7 @@ app = FastAPI(
 )
 def home():
 
-    return HTMLResponse(
-"""
+    return HTMLResponse("""
 <!doctype html>
 
 <html>
@@ -2043,7 +2101,11 @@ content="width=device-width,initial-scale=1">
 
 body {
     margin:0;
-    font-family:system-ui,-apple-system,BlinkMacSystemFont,sans-serif;
+    font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
     background:#f4f4f4;
     color:#111;
 }
@@ -2064,7 +2126,8 @@ h1 {
     padding:24px;
     border-radius:25px;
     margin:18px 0;
-    box-shadow:0 3px 20px rgba(0,0,0,.08);
+    box-shadow:
+        0 3px 20px rgba(0,0,0,.08);
 }
 
 .status {
@@ -2344,6 +2407,7 @@ async function getStatus() {
             data.voice ||
             "en-IN-NeerjaNeural";
 
+
         if (data.last_package) {
 
             let html =
@@ -2354,6 +2418,7 @@ async function getStatus() {
                 '<br><br>'
                 +
                 data.last_package;
+
 
             if (data.last_video) {
 
@@ -2413,6 +2478,7 @@ async function getStatus() {
                 html;
         }
 
+
         try {
 
             const health =
@@ -2437,26 +2503,6 @@ async function getStatus() {
                 +
                 (
                     h.ffprobe
-                    ? "✅ Available"
-                    : "❌ Missing"
-                )
-                +
-                "<br>"
-                +
-                "Pillow: "
-                +
-                (
-                    h.pillow
-                    ? "✅ Available"
-                    : "❌ Missing"
-                )
-                +
-                "<br>"
-                +
-                "TTS package: "
-                +
-                (
-                    h.edge_tts
                     ? "✅ Available"
                     : "❌ Missing"
                 )
@@ -2488,12 +2534,10 @@ async function run(value) {
             "/api/run",
             {
                 method:"POST",
-
                 headers:{
                     "Content-Type":
                         "application/json"
                 },
-
                 body:JSON.stringify({
                     enabled:value
                 })
@@ -2567,8 +2611,7 @@ setInterval(
 </body>
 
 </html>
-"""
-    )
+""")
 
 
 # ============================================================
@@ -2583,7 +2626,7 @@ def status():
         DEFAULT_CFG
     )
 
-    products_data = load(
+    products = load(
         QUEUE,
         DEFAULT_PRODUCTS
     )
@@ -2625,7 +2668,7 @@ def status():
             ),
 
         "products":
-            len(products_data)
+            len(products)
     })
 
 
@@ -2639,7 +2682,9 @@ def video(
     download: int = 0
 ):
 
-    drafts_root = DRAFTS.resolve()
+    drafts_root = (
+        DRAFTS.resolve()
+    )
 
     requested = (
         DRAFTS /
@@ -2748,7 +2793,8 @@ def drafts():
                     video_valid = (
                         video_file.stat().st_size
                         > 10_000
-                        and verify_video(
+                        and
+                        verify_video(
                             video_file
                         )
                     )
@@ -2777,6 +2823,7 @@ def drafts():
             })
 
     return {
+
         "count":
             len(packages),
 
@@ -2980,6 +3027,7 @@ async def add_product(
     )
 
     return {
+
         "ok":
             True,
 
@@ -3001,6 +3049,7 @@ def products():
     )
 
     return {
+
         "count":
             len(products),
 
@@ -3016,30 +3065,7 @@ def products():
 @app.get("/health")
 def health():
 
-    # Check Pillow
-    try:
-
-        import PIL
-
-        pillow_available = True
-
-    except Exception:
-
-        pillow_available = False
-
-    # Check edge-tts
-    try:
-
-        import edge_tts
-
-        tts_available = True
-
-    except Exception:
-
-        tts_available = False
-
-    # Count products
-    products_data = load(
+    products = load(
         QUEUE,
         DEFAULT_PRODUCTS
     )
@@ -3053,7 +3079,7 @@ def health():
             "waititsonsale-autopilot",
 
         "version":
-            "6.1-verified-video",
+            "7.0-drawtext-fixed",
 
         "ffmpeg":
             ffmpeg_available(),
@@ -3064,17 +3090,11 @@ def health():
         "ffmpeg_version":
             get_ffmpeg_version(),
 
-        "pillow":
-            pillow_available,
-
-        "edge_tts":
-            tts_available,
+        "worker_running":
+            STATE["worker_running"],
 
         "products":
-            len(products_data),
-
-        "worker_running":
-            STATE["worker_running"]
+            len(products)
     }
 
 
@@ -3129,4 +3149,4 @@ if __name__ == "__main__":
                 "8080"
             )
         )
-        )
+            )
