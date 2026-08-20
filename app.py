@@ -8,7 +8,6 @@ import urllib.request
 import subprocess
 import shutil
 import re
-import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -23,16 +22,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 BASE = Path(__file__).parent
 
 DATA = BASE / "data"
-DATA.mkdir(parents=True, exist_ok=True)
+DATA.mkdir(exist_ok=True)
 
 CFG = DATA / "config.json"
 QUEUE = DATA / "products.json"
 
 DRAFTS = DATA / "drafts"
-DRAFTS.mkdir(parents=True, exist_ok=True)
-
-MEDIA = DATA / "media"
-MEDIA.mkdir(parents=True, exist_ok=True)
+DRAFTS.mkdir(exist_ok=True)
 
 ACTIVITY_LOG = DATA / "activity.log"
 
@@ -44,8 +40,7 @@ ACTIVITY_LOG = DATA / "activity.log"
 DEFAULT_CFG = {
     "handle": "@waititsonsale",
 
-    # Start with 1 while testing.
-    "posts_per_day": 1,
+    "posts_per_day": 3,
 
     "enabled": False,
 
@@ -53,11 +48,14 @@ DEFAULT_CFG = {
 
     "voice": "en-IN-NeerjaNeural",
 
-    "video_width": 1080,
+    # IMPORTANT:
+    # 720x1280 is much safer for Render's 512 MB instance.
+    # Instagram/Reels still accepts 9:16.
+    "video_width": 720,
 
-    "video_height": 1920,
+    "video_height": 1280,
 
-    "video_fps": 30,
+    "video_fps": 24,
 
     "last_product_index": 0
 }
@@ -124,7 +122,7 @@ STATE = {
     "last_package": None,
     "last_video": None,
     "worker_running": False,
-    "last_error": None
+    "creating": False
 }
 
 
@@ -145,9 +143,7 @@ def load(path, default):
             )
         )
 
-    except Exception as e:
-
-        print(f"Load error for {path}: {e}")
+    except Exception:
 
         return default
 
@@ -175,17 +171,11 @@ def save(path, obj):
 
 def log(message):
 
-    STATE["message"] = str(message)
+    STATE["message"] = message
 
     timestamp = datetime.now().strftime(
         "%Y-%m-%d %H:%M:%S"
     )
-
-    line = (
-        f"[{timestamp}] {message}"
-    )
-
-    print(line, flush=True)
 
     try:
 
@@ -195,28 +185,11 @@ def log(message):
         ) as f:
 
             f.write(
-                line + "\n"
+                f"[{timestamp}] {message}\n"
             )
 
     except Exception:
         pass
-
-
-def log_exception(prefix, error):
-
-    error_text = traceback.format_exc()
-
-    STATE["last_error"] = (
-        f"{prefix}: {error}"
-    )
-
-    log(
-        f"{prefix}: {error}"
-    )
-
-    log(
-        error_text
-    )
 
 
 # ============================================================
@@ -236,30 +209,46 @@ def clean_filename(value):
     return value[:80].strip("_")
 
 
-def remove_emojis(text):
-
-    """
-    Keep normal Unicode text such as ₹,
-    but remove emoji/symbol ranges that may
-    cause font/FFmpeg problems.
-    """
+def escape_ffmpeg_text(text):
 
     text = str(text)
 
-    emoji_pattern = re.compile(
-        "["
-        "\U0001F300-\U0001FAFF"
-        "\U00002700-\U000027BF"
-        "\U0001F1E6-\U0001F1FF"
-        "\U00002600-\U000026FF"
-        "]",
-        flags=re.UNICODE
+    text = text.replace(
+        "\\",
+        "\\\\"
     )
 
-    return emoji_pattern.sub(
-        "",
-        text
-    ).strip()
+    text = text.replace(
+        ":",
+        "\\:"
+    )
+
+    text = text.replace(
+        "'",
+        "\\'"
+    )
+
+    text = text.replace(
+        "%",
+        "\\%"
+    )
+
+    text = text.replace(
+        "[",
+        "\\["
+    )
+
+    text = text.replace(
+        "]",
+        "\\]"
+    )
+
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    return text
 
 
 def wrap_text(text, width=28):
@@ -293,42 +282,6 @@ def wrap_text(text, width=28):
 
 
 # ============================================================
-# FFMPEG
-# ============================================================
-
-def get_ffmpeg_path():
-
-    # First check system FFmpeg.
-    system_ffmpeg = shutil.which("ffmpeg")
-
-    if system_ffmpeg:
-        return system_ffmpeg
-
-    # Then try imageio-ffmpeg.
-    try:
-
-        import imageio_ffmpeg
-
-        path = imageio_ffmpeg.get_ffmpeg_exe()
-
-        if path and Path(path).exists():
-            return path
-
-    except Exception as e:
-
-        log(
-            f"imageio-ffmpeg unavailable: {e}"
-        )
-
-    return None
-
-
-def ffmpeg_available():
-
-    return get_ffmpeg_path() is not None
-
-
-# ============================================================
 # PRODUCT HOOK
 # ============================================================
 
@@ -341,7 +294,7 @@ def random_hook(product):
 
     hooks = [
 
-        f"WAIT... why is this only {price}?",
+        f"WAIT… why is this only {price}?",
 
         f"I found something actually useful for {price}.",
 
@@ -349,9 +302,9 @@ def random_hook(product):
 
         "Why did nobody tell me about this before?",
 
-        "This is one of those products you do not know you need until you see it.",
+        "This is one of those products you don't know you need until you see it.",
 
-        "POV: you find something genuinely useful for under 500 rupees.",
+        "POV: you find something genuinely useful for under ₹500.",
 
         f"Would you buy this for {price}?",
 
@@ -360,6 +313,17 @@ def random_hook(product):
     ]
 
     return random.choice(hooks)
+
+
+# ============================================================
+# CHECK FFMPEG
+# ============================================================
+
+def ffmpeg_available():
+
+    return shutil.which(
+        "ffmpeg"
+    ) is not None
 
 
 # ============================================================
@@ -388,15 +352,8 @@ def download_image(url, destination):
 
             data = response.read()
 
-        if not data:
-            return None
-
         destination.write_bytes(
             data
-        )
-
-        log(
-            f"Product image downloaded: {destination.name}"
         )
 
         return destination
@@ -434,8 +391,11 @@ def create_placeholder_image(
         return None
 
 
-    width = 1080
-    height = 1920
+    # Smaller image to reduce memory usage.
+
+    width = 720
+    height = 1280
+
 
     image = Image.new(
         "RGB",
@@ -448,35 +408,21 @@ def create_placeholder_image(
     )
 
 
-    # --------------------------------------------------------
-    # Fonts
-    # --------------------------------------------------------
-
-    font_path = (
-        "/usr/share/fonts/truetype/dejavu/"
-        "DejaVuSans-Bold.ttf"
-    )
-
-    regular_font_path = (
-        "/usr/share/fonts/truetype/dejavu/"
-        "DejaVuSans.ttf"
-    )
-
     try:
 
         font_large = ImageFont.truetype(
-            font_path,
-            80
-        )
-
-        font_medium = ImageFont.truetype(
-            font_path,
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             52
         )
 
+        font_medium = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            34
+        )
+
         font_small = ImageFont.truetype(
-            regular_font_path,
-            40
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            28
         )
 
     except Exception:
@@ -502,34 +448,21 @@ def create_placeholder_image(
     )
 
 
-    # --------------------------------------------------------
-    # Header
-    # --------------------------------------------------------
-
     draw.text(
-        (80, 130),
-        "!",
-        fill=(20, 20, 20),
-        font=font_large
-    )
-
-
-    draw.text(
-        (80, 300),
+        (50, 80),
         "@waititsonsale",
         fill=(15, 15, 15),
         font=font_medium
     )
 
 
-    # --------------------------------------------------------
-    # Product Card
-    # --------------------------------------------------------
+    # Product card
 
-    card_x1 = 70
-    card_y1 = 570
-    card_x2 = 1010
-    card_y2 = 1280
+    card_x1 = 45
+    card_y1 = 380
+    card_x2 = 675
+    card_y2 = 850
+
 
     draw.rounded_rectangle(
         (
@@ -538,7 +471,7 @@ def create_placeholder_image(
             card_x2,
             card_y2
         ),
-        radius=50,
+        radius=35,
         fill=(255, 255, 255)
     )
 
@@ -553,45 +486,42 @@ def create_placeholder_image(
         (0, 0),
         wrapped,
         font=font_large,
-        spacing=15
+        spacing=10
     )
 
-    text_width = (
-        bbox[2] - bbox[0]
-    )
+    text_width = bbox[2] - bbox[0]
 
 
     draw.multiline_text(
         (
             (width - text_width) / 2,
-            700
+            500
         ),
         wrapped,
         fill=(15, 15, 15),
         font=font_large,
         align="center",
-        spacing=15
+        spacing=10
     )
 
 
     draw.text(
-        (100, 1050),
-        f"{category}  |  {price}",
+        (70, 730),
+        f"{category}  •  {price}",
         fill=(50, 50, 50),
         font=font_medium
     )
 
 
     draw.text(
-        (80, 1470),
+        (50, 970),
         "USEFUL FINDS.",
         fill=(15, 15, 15),
         font=font_medium
     )
 
-
     draw.text(
-        (80, 1540),
+        (50, 1025),
         "SAVE THIS REEL",
         fill=(15, 15, 15),
         font=font_medium
@@ -600,11 +530,9 @@ def create_placeholder_image(
 
     image.save(
         output,
-        quality=95
-    )
-
-    log(
-        f"Placeholder image created: {output.name}"
+        "JPEG",
+        quality=88,
+        optimize=True
     )
 
     return output
@@ -670,145 +598,436 @@ def generate_voiceover(
 
 
 # ============================================================
-# CREATE REEL PACKAGE
+# VIDEO GENERATOR
+# ============================================================
+#
+# IMPORTANT MEMORY OPTIMIZATION
+#
+# The old version created:
+#
+#   silent.mp4
+#       ↓
+#   overlay.mp4
+#       ↓
+#   final video.mp4
+#
+# That can push a 512 MB Render instance over the limit.
+#
+# This version creates ONE FFmpeg process and ONE output file.
+#
+# FFmpeg is also limited to one thread.
+#
 # ============================================================
 
-def create_reel_package(product):
+def create_video(
+    image_path,
+    audio_path,
+    output_path,
+    product,
+    scenes
+):
 
     cfg = load(
         CFG,
         DEFAULT_CFG
     )
 
-    handle = cfg.get(
-        "handle",
-        "@waititsonsale"
+    width = int(
+        cfg.get(
+            "video_width",
+            720
+        )
     )
 
-    name = product.get(
-        "name",
-        "Interesting Product"
+    height = int(
+        cfg.get(
+            "video_height",
+            1280
+        )
     )
 
-    price = product.get(
-        "price",
-        "Check current price"
-    )
-
-    category = product.get(
-        "category",
-        "General"
-    )
-
-    why = product.get(
-        "why",
-        "a useful everyday product"
-    )
-
-    image_url = product.get(
-        "image_url",
-        ""
+    fps = int(
+        cfg.get(
+            "video_fps",
+            24
+        )
     )
 
 
-    # --------------------------------------------------------
-    # Hook
-    # --------------------------------------------------------
+    durations = [
+        3,
+        3,
+        4,
+        3,
+        4
+    ]
 
-    hook = random_hook(
-        product
+
+    total_duration = sum(
+        durations
     )
 
 
     # --------------------------------------------------------
-    # Scenes
+    # Build text overlay filters
     # --------------------------------------------------------
 
-    scenes = [
+    filter_parts = []
 
-        {
-            "time": "0-3s",
+    current = 0
 
-            "visual":
-                f"Show a strong close-up of the {name}.",
 
-            "voiceover":
-                hook,
+    for index, scene in enumerate(
+        scenes
+    ):
 
-            "on_screen_text":
-                hook
-        },
+        text = escape_ffmpeg_text(
+            scene["on_screen_text"]
+        )
 
-        {
-            "time": "3-6s",
+        start = current
 
-            "visual":
-                f"Show the {name} from multiple angles.",
+        end = current + durations[index]
 
-            "voiceover":
-                f"This is the {name}, and it solves {why}.",
 
-            "on_screen_text":
-                name
-        },
+        filter_parts.append(
 
-        {
-            "time": "6-10s",
+            "drawtext="
 
-            "visual":
-                "Show the product being used.",
+            "fontfile=/usr/share/fonts/"
+            "truetype/dejavu/"
+            "DejaVuSans-Bold.ttf:"
 
-            "voiceover":
-                "The best part is how simple it is to use.",
+            f"text='{text}':"
 
-            "on_screen_text":
-                "Simple. Useful. Practical."
-        },
+            "fontcolor=white:"
 
-        {
-            "time": "10-13s",
+            "fontsize=42:"
 
-            "visual":
-                "Show the result after using the product.",
+            "borderw=3:"
 
-            "voiceover":
-                f"And at around {price}, it could be worth checking out.",
+            "bordercolor=black:"
 
-            "on_screen_text":
-                f"Example price: {price}"
-        },
+            "x=(w-text_w)/2:"
 
-        {
-            "time": "13-17s",
+            "y=h*0.78:"
 
-            "visual":
-                "Finish with a clean product shot.",
+            f"enable='between(t,{start},{end})'"
 
-            "voiceover":
-                f"Save this for later and follow {handle} for more useful finds.",
+        )
 
-            "on_screen_text":
-                f"Follow {handle}"
-        }
+
+        current = end
+
+
+    filter_parts.append(
+        "format=yuv420p"
+    )
+
+
+    filter_complex = ",".join(
+        filter_parts
+    )
+
+
+    # --------------------------------------------------------
+    # Single FFmpeg command
+    # --------------------------------------------------------
+
+    cmd = [
+
+        "ffmpeg",
+
+        "-y",
+
+        # Limit FFmpeg memory/CPU usage.
+        "-threads",
+        "1",
+
+        "-loop",
+        "1",
+
+        "-i",
+        str(image_path),
 
     ]
 
 
-    voiceover = "\n".join(
-        scene["voiceover"]
-        for scene in scenes
+    if audio_path and audio_path.exists():
+
+        cmd.extend([
+
+            "-i",
+            str(audio_path)
+
+        ])
+
+
+    cmd.extend([
+
+        "-t",
+        str(total_duration),
+
+        "-filter_complex",
+        filter_complex,
+
+        "-r",
+        str(fps),
+
+        "-c:v",
+        "libx264",
+
+        # Ultrafast uses less CPU/memory.
+        "-preset",
+        "ultrafast",
+
+        "-crf",
+        "30",
+
+        "-pix_fmt",
+        "yuv420p",
+
+        "-threads",
+        "1"
+
+    ])
+
+
+    if audio_path and audio_path.exists():
+
+        cmd.extend([
+
+            "-map",
+            "0:v:0",
+
+            "-map",
+            "1:a:0",
+
+            "-c:a",
+            "aac",
+
+            "-b:a",
+            "96k",
+
+            "-shortest"
+
+        ])
+
+
+    cmd.append(
+        str(output_path)
     )
 
 
-    # --------------------------------------------------------
-    # Caption
-    # --------------------------------------------------------
+    log(
+        "Creating video with memory-optimized FFmpeg..."
+    )
 
-    caption = f"""WAIT, ITS ON SALE
+
+    try:
+
+        result = subprocess.run(
+
+            cmd,
+
+            check=True,
+
+            stdout=subprocess.PIPE,
+
+            stderr=subprocess.PIPE,
+
+            timeout=300
+
+        )
+
+
+        if output_path.exists():
+
+            log(
+                "Video created successfully."
+            )
+
+            return True
+
+
+    except subprocess.TimeoutExpired:
+
+        log(
+            "FFmpeg timed out."
+        )
+
+    except subprocess.CalledProcessError as e:
+
+        error_text = (
+            e.stderr.decode(
+                "utf-8",
+                errors="ignore"
+            )
+            if e.stderr
+            else "Unknown FFmpeg error"
+        )
+
+        log(
+            "FFmpeg failed: "
+            + error_text[-1200:]
+        )
+
+    except Exception as e:
+
+        log(
+            f"Video generation error: {e}"
+        )
+
+
+    return False
+
+
+# ============================================================
+# GENERATE REEL PACKAGE
+# ============================================================
+
+def create_reel_package(product):
+
+    STATE["creating"] = True
+
+    try:
+
+        cfg = load(
+            CFG,
+            DEFAULT_CFG
+        )
+
+
+        handle = cfg.get(
+            "handle",
+            "@waititsonsale"
+        )
+
+
+        name = product.get(
+            "name",
+            "Interesting Product"
+        )
+
+
+        price = product.get(
+            "price",
+            "Check current price"
+        )
+
+
+        category = product.get(
+            "category",
+            "General"
+        )
+
+
+        why = product.get(
+            "why",
+            "a useful everyday product"
+        )
+
+
+        image_url = product.get(
+            "image_url",
+            ""
+        )
+
+
+        hook = random_hook(
+            product
+        )
+
+
+        # ====================================================
+        # SCENES
+        # ====================================================
+
+        scenes = [
+
+            {
+                "time": "0-3s",
+
+                "visual":
+                    f"Show a strong close-up of the {name}.",
+
+                "voiceover":
+                    hook,
+
+                "on_screen_text":
+                    hook
+            },
+
+            {
+                "time": "3-6s",
+
+                "visual":
+                    f"Show the {name} from multiple angles.",
+
+                "voiceover":
+                    f"This is the {name}, and it solves {why}.",
+
+                "on_screen_text":
+                    name
+            },
+
+            {
+                "time": "6-10s",
+
+                "visual":
+                    "Show the product being used.",
+
+                "voiceover":
+                    "The best part is how simple it is to use.",
+
+                "on_screen_text":
+                    "Simple. Useful. Practical."
+            },
+
+            {
+                "time": "10-13s",
+
+                "visual":
+                    "Show the result after using the product.",
+
+                "voiceover":
+                    f"And at around {price}, it could be worth checking out.",
+
+                "on_screen_text":
+                    f"Example price: {price}"
+            },
+
+            {
+                "time": "13-17s",
+
+                "visual":
+                    "Finish with a clean product shot.",
+
+                "voiceover":
+                    f"Save this for later and follow {handle} for more useful finds.",
+
+                "on_screen_text":
+                    f"Follow {handle}"
+            }
+
+        ]
+
+
+        voiceover = "\n".join(
+            scene["voiceover"]
+            for scene in scenes
+        )
+
+
+        # ====================================================
+        # CAPTION
+        # ====================================================
+
+        caption = f"""WAIT, IT'S ON SALE
 
 {name}
 
-Price shown: {price}
+💰 Example price: {price}
 
 Why it caught our attention:
 
@@ -844,210 +1063,184 @@ Prices and availability can change.
 """
 
 
-    # --------------------------------------------------------
-    # Folder
-    # --------------------------------------------------------
+        # ====================================================
+        # PACKAGE DIRECTORY
+        # ====================================================
 
-    timestamp = datetime.now().strftime(
-        "%Y%m%d_%H%M%S"
-    )
-
-    safe_name = clean_filename(
-        name
-    )
-
-    package_dir = (
-        DRAFTS /
-        f"{timestamp}_{safe_name}"
-    )
-
-    package_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+        timestamp = datetime.now().strftime(
+            "%Y%m%d_%H%M%S"
+        )
 
 
-    log(
-        f"Creating Reel package: {package_dir.name}"
-    )
+        safe_name = clean_filename(
+            name
+        )
 
 
-    # --------------------------------------------------------
-    # Script
-    # --------------------------------------------------------
-
-    script_lines = [
-
-        f"REEL: {name}",
-
-        "=" * 60,
-
-        f"CATEGORY: {category}",
-
-        f"EXAMPLE PRICE: {price}",
-
-        "",
-
-        "CONCEPT",
-
-        f"Fast-paced product discovery Reel showing why the "
-        f"{name} is useful and worth considering.",
-
-        "",
-
-        "SCENE PLAN",
-
-        "-" * 60
-
-    ]
+        package_dir = (
+            DRAFTS /
+            f"{timestamp}_{safe_name}"
+        )
 
 
-    for scene in scenes:
+        package_dir.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
+
+        # ====================================================
+        # WRITE SCRIPT
+        # ====================================================
+
+        script_lines = [
+
+            f"REEL: {name}",
+
+            "=" * 60,
+
+            f"CATEGORY: {category}",
+
+            f"EXAMPLE PRICE: {price}",
+
+            "",
+
+            "CONCEPT",
+
+            f"Fast-paced product discovery Reel showing why the "
+            f"{name} is useful and worth considering.",
+
+            "",
+
+            "SCENE PLAN",
+
+            "-" * 60
+
+        ]
+
+
+        for scene in scenes:
+
+            script_lines.extend([
+
+                "",
+
+                f"{scene['time']} — VISUAL",
+
+                scene["visual"],
+
+                "",
+
+                "VOICEOVER:",
+
+                scene["voiceover"],
+
+                "",
+
+                "ON-SCREEN TEXT:",
+
+                scene["on_screen_text"]
+
+            ])
+
 
         script_lines.extend([
 
             "",
 
-            f"{scene['time']} - VISUAL",
+            "FULL VOICEOVER",
 
-            scene["visual"],
+            "-" * 60,
 
-            "",
-
-            "VOICEOVER:",
-
-            scene["voiceover"],
+            voiceover,
 
             "",
 
-            "ON-SCREEN TEXT:",
+            "CAPTION",
 
-            scene["on_screen_text"]
+            "-" * 60,
+
+            caption
 
         ])
 
 
-    script_lines.extend([
-
-        "",
-
-        "FULL VOICEOVER",
-
-        "-" * 60,
-
-        voiceover,
-
-        "",
-
-        "CAPTION",
-
-        "-" * 60,
-
-        caption
-
-    ])
+        script_text = "\n".join(
+            script_lines
+        )
 
 
-    script_text = "\n".join(
-        script_lines
-    )
+        (package_dir / "script.txt").write_text(
+            script_text.strip(),
+            encoding="utf-8"
+        )
 
 
-    # --------------------------------------------------------
-    # Text files
-    # --------------------------------------------------------
-
-    (
-        package_dir /
-        "script.txt"
-    ).write_text(
-        script_text.strip(),
-        encoding="utf-8"
-    )
+        (package_dir / "caption.txt").write_text(
+            caption.strip(),
+            encoding="utf-8"
+        )
 
 
-    (
-        package_dir /
-        "caption.txt"
-    ).write_text(
-        caption.strip(),
-        encoding="utf-8"
-    )
+        (package_dir / "voiceover.txt").write_text(
+            voiceover.strip(),
+            encoding="utf-8"
+        )
 
 
-    (
-        package_dir /
-        "voiceover.txt"
-    ).write_text(
-        voiceover.strip(),
-        encoding="utf-8"
-    )
-
-
-    # --------------------------------------------------------
-    # Reel plan
-    # --------------------------------------------------------
-
-    save(
-        package_dir / "reel_plan.json",
-        {
-            "product": product,
-            "duration_seconds": 17,
-            "format": "9:16",
-            "scenes": scenes
-        }
-    )
-
-
-    # --------------------------------------------------------
-    # Metadata
-    # --------------------------------------------------------
-
-    metadata = {
-
-        "created_at":
-            datetime.now().isoformat(),
-
-        "handle":
-            handle,
-
-        "product":
-            product,
-
-        "reel":
+        save(
+            package_dir / "reel_plan.json",
             {
+                "product": product,
                 "duration_seconds": 17,
                 "format": "9:16",
-                "hook": hook,
-                "voiceover": voiceover,
                 "scenes": scenes
-            },
-
-        "caption":
-            caption,
-
-        "status":
-            "ready",
-
-        "publishing":
-            {
-                "instagram": False,
-                "published": False
             }
-    }
+        )
 
 
-    save(
-        package_dir / "metadata.json",
-        metadata
-    )
+        metadata = {
+
+            "created_at":
+                datetime.now().isoformat(),
+
+            "handle":
+                handle,
+
+            "product":
+                product,
+
+            "reel":
+                {
+                    "duration_seconds": 17,
+                    "format": "9:16",
+                    "resolution": "720x1280",
+                    "hook": hook,
+                    "voiceover": voiceover,
+                    "scenes": scenes
+                },
+
+            "caption":
+                caption,
+
+            "status":
+                "ready",
+
+            "publishing":
+                {
+                    "instagram": False,
+                    "published": False
+                }
+        }
 
 
-    # --------------------------------------------------------
-    # README
-    # --------------------------------------------------------
+        save(
+            package_dir / "metadata.json",
+            metadata
+        )
 
-    readme = f"""@waititsonsale
+
+        readme = f"""@waititsonsale
 REEL PACKAGE
 
 Product:
@@ -1080,10 +1273,10 @@ metadata.json
 Machine-readable information.
 
 product.jpg
-Product image or generated placeholder.
+Product image.
 
 voiceover.mp3
-Generated voiceover if TTS succeeds.
+Generated voiceover.
 
 video.mp4
 Generated 9:16 Reel video.
@@ -1094,575 +1287,126 @@ Price and availability must be checked before publishing.
 """
 
 
-    (
-        package_dir /
-        "README.txt"
-    ).write_text(
-        readme,
-        encoding="utf-8"
-    )
-
-
-    # ========================================================
-    # IMAGE
-    # ========================================================
-
-    image_path = (
-        package_dir /
-        "product.jpg"
-    )
-
-    downloaded = None
-
-    if image_url:
-
-        downloaded = download_image(
-            image_url,
-            image_path
+        (package_dir / "README.txt").write_text(
+            readme,
+            encoding="utf-8"
         )
 
 
-    if not downloaded:
+        # ====================================================
+        # PRODUCT IMAGE
+        # ====================================================
 
-        downloaded = create_placeholder_image(
-            product,
-            image_path
+        image_path = (
+            package_dir /
+            "product.jpg"
         )
 
 
-    if not downloaded:
-
-        raise RuntimeError(
-            "Could not create or download product image."
-        )
+        downloaded = None
 
 
-    # ========================================================
-    # VOICEOVER
-    # ========================================================
+        if image_url:
 
-    audio_path = (
-        package_dir /
-        "voiceover.mp3"
-    )
+            downloaded = download_image(
+                image_url,
+                image_path
+            )
 
 
-    voice = cfg.get(
-        "voice",
-        "en-IN-NeerjaNeural"
-    )
+        if not downloaded:
+
+            downloaded = create_placeholder_image(
+                product,
+                image_path
+            )
 
 
-    log(
-        f"Generating voiceover using {voice}"
-    )
-
-
-    tts_success = generate_voiceover(
-        voiceover,
-        audio_path,
-        voice
-    )
-
-
-    if tts_success:
-
-        log(
-            "Voiceover generated successfully."
-        )
-
-    else:
-
-        log(
-            "Voiceover failed. Continuing without audio."
-        )
-
-
-    # ========================================================
-    # VIDEO
-    # ========================================================
-
-    video_path = (
-        package_dir /
-        "video.mp4"
-    )
-
-
-    ffmpeg_path = get_ffmpeg_path()
-
-
-    if ffmpeg_path:
-
-        log(
-            f"FFmpeg found: {ffmpeg_path}"
-        )
-
-        success = create_video(
-
-            image_path=downloaded,
-
-            audio_path=(
-                audio_path
-                if tts_success
-                else None
-            ),
-
-            output_path=video_path,
-
-            product=product,
-
-            scenes=scenes,
-
-            ffmpeg_path=ffmpeg_path
-        )
-
-        if success:
+        if not downloaded:
 
             log(
-                f"Video created successfully: {video_path.name}"
+                "Could not create product image."
             )
+
+            return package_dir
+
+
+        # ====================================================
+        # VOICEOVER
+        # ====================================================
+
+        audio_path = (
+            package_dir /
+            "voiceover.mp3"
+        )
+
+
+        voice = cfg.get(
+            "voice",
+            "en-IN-NeerjaNeural"
+        )
+
+
+        tts_success = generate_voiceover(
+
+            voiceover,
+
+            audio_path,
+
+            voice
+
+        )
+
+
+        # ====================================================
+        # VIDEO
+        # ====================================================
+
+        video_path = (
+            package_dir /
+            "video.mp4"
+        )
+
+
+        if ffmpeg_available():
+
+            success = create_video(
+
+                image_path=downloaded,
+
+                audio_path=(
+                    audio_path
+                    if tts_success
+                    else None
+                ),
+
+                output_path=video_path,
+
+                product=product,
+
+                scenes=scenes
+
+            )
+
+
+            if not success:
+
+                log(
+                    "Video generation failed."
+                )
 
         else:
 
             log(
-                "Video generation failed."
-            )
-
-    else:
-
-        log(
-            "FFmpeg unavailable. Video generation skipped."
-        )
-
-
-    return package_dir
-
-
-# ============================================================
-# VIDEO GENERATOR
-# ============================================================
-
-def create_video(
-    image_path,
-    audio_path,
-    output_path,
-    product,
-    scenes,
-    ffmpeg_path
-):
-
-    name = product.get(
-        "name",
-        "Product"
-    )
-
-    price = product.get(
-        "price",
-        ""
-    )
-
-
-    durations = [
-        3,
-        3,
-        4,
-        3,
-        4
-    ]
-
-
-    total_duration = sum(
-        durations
-    )
-
-
-    temp_dir = (
-        output_path.parent /
-        "_video_tmp"
-    )
-
-
-    temp_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-
-    try:
-
-        # ----------------------------------------------------
-        # Base video
-        # ----------------------------------------------------
-
-        silent_video = (
-            temp_dir /
-            "silent.mp4"
-        )
-
-
-        cmd = [
-
-            ffmpeg_path,
-
-            "-y",
-
-            "-loop",
-            "1",
-
-            "-i",
-            str(image_path),
-
-            "-t",
-            str(total_duration),
-
-            "-vf",
-
-            (
-                "scale=1080:1920:"
-                "force_original_aspect_ratio=increase,"
-                "crop=1080:1920,"
-                "format=yuv420p"
-            ),
-
-            "-r",
-            "30",
-
-            "-c:v",
-            "libx264",
-
-            "-preset",
-            "veryfast",
-
-            "-pix_fmt",
-            "yuv420p",
-
-            str(silent_video)
-
-        ]
-
-
-        log(
-            "Creating base video..."
-        )
-
-
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=180
-        )
-
-
-        if result.returncode != 0:
-
-            error = result.stderr.decode(
-                "utf-8",
-                errors="replace"
-            )
-
-            log(
-                "Base video FFmpeg error:"
-            )
-
-            log(
-                error[-5000:]
-            )
-
-            return False
-
-
-        if not silent_video.exists():
-
-            log(
-                "Base video was not created."
-            )
-
-            return False
-
-
-        # ----------------------------------------------------
-        # Text overlay
-        # ----------------------------------------------------
-
-        overlay_video = (
-            temp_dir /
-            "overlay.mp4"
-        )
-
-
-        filter_parts = []
-
-
-        current = 0
-
-
-        for index, scene in enumerate(
-            scenes
-        ):
-
-            text_path = (
-                temp_dir /
-                f"text_{index}.txt"
+                "FFmpeg unavailable."
             )
 
 
-            clean_text = remove_emojis(
-                scene["on_screen_text"]
-            )
-
-
-            text_path.write_text(
-                clean_text,
-                encoding="utf-8"
-            )
-
-
-            start = current
-
-            end = current + durations[index]
-
-
-            # FFmpeg filter path escaping.
-            text_file = str(
-                text_path
-            ).replace(
-                "\\",
-                "\\\\"
-            ).replace(
-                ":",
-                "\\:"
-            )
-
-
-            filter_parts.append(
-
-                "drawtext="
-
-                f"fontfile=/usr/share/fonts/"
-                f"truetype/dejavu/"
-                f"DejaVuSans-Bold.ttf:"
-
-                f"textfile='{text_file}':"
-
-                "fontcolor=white:"
-
-                "fontsize=58:"
-
-                "borderw=4:"
-
-                "bordercolor=black:"
-
-                "x=(w-text_w)/2:"
-
-                "y=h*0.78:"
-
-                f"enable='between(t,{start},{end})'"
-
-            )
-
-
-            current = end
-
-
-        filter_complex = ",".join(
-            filter_parts
-        )
-
-
-        cmd_overlay = [
-
-            ffmpeg_path,
-
-            "-y",
-
-            "-i",
-            str(silent_video),
-
-            "-vf",
-            filter_complex,
-
-            "-c:v",
-            "libx264",
-
-            "-preset",
-            "veryfast",
-
-            "-pix_fmt",
-            "yuv420p",
-
-            str(overlay_video)
-
-        ]
-
-
-        log(
-            "Adding text overlays..."
-        )
-
-
-        result = subprocess.run(
-            cmd_overlay,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=180
-        )
-
-
-        if result.returncode != 0:
-
-            error = result.stderr.decode(
-                "utf-8",
-                errors="replace"
-            )
-
-            log(
-                "Text overlay FFmpeg error:"
-            )
-
-            log(
-                error[-5000:]
-            )
-
-            # Fall back to silent video.
-            shutil.copy(
-                silent_video,
-                output_path
-            )
-
-            return output_path.exists()
-
-
-        if not overlay_video.exists():
-
-            log(
-                "Overlay video was not created."
-            )
-
-            shutil.copy(
-                silent_video,
-                output_path
-            )
-
-            return output_path.exists()
-
-
-        # ----------------------------------------------------
-        # Add audio
-        # ----------------------------------------------------
-
-        if audio_path and audio_path.exists():
-
-            log(
-                "Merging voiceover..."
-            )
-
-
-            cmd_audio = [
-
-                ffmpeg_path,
-
-                "-y",
-
-                "-i",
-                str(overlay_video),
-
-                "-i",
-                str(audio_path),
-
-                "-map",
-                "0:v:0",
-
-                "-map",
-                "1:a:0",
-
-                "-c:v",
-                "copy",
-
-                "-c:a",
-                "aac",
-
-                "-b:a",
-                "128k",
-
-                "-shortest",
-
-                str(output_path)
-
-            ]
-
-
-            result = subprocess.run(
-                cmd_audio,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=180
-            )
-
-
-            if result.returncode != 0:
-
-                error = result.stderr.decode(
-                    "utf-8",
-                    errors="replace"
-                )
-
-                log(
-                    "Audio merge FFmpeg error:"
-                )
-
-                log(
-                    error[-5000:]
-                )
-
-                # Fall back to video without audio.
-                shutil.copy(
-                    overlay_video,
-                    output_path
-                )
-
-
-        else:
-
-            shutil.copy(
-                overlay_video,
-                output_path
-            )
-
-
-        return output_path.exists()
-
-
-    except subprocess.TimeoutExpired:
-
-        log(
-            "FFmpeg timed out after 180 seconds."
-        )
-
-        return False
-
-
-    except Exception as e:
-
-        log_exception(
-            "Video creation exception",
-            e
-        )
-
-        return False
-
+        return package_dir
 
     finally:
 
-        try:
-
-            shutil.rmtree(
-                temp_dir,
-                ignore_errors=True
-            )
-
-        except Exception:
-            pass
+        STATE["creating"] = False
 
 
 # ============================================================
@@ -1688,19 +1432,16 @@ def cycle():
             )
 
 
-            log(
-                "Worker config: "
-                f"enabled={cfg.get('enabled')}, "
-                f"posts_per_day={cfg.get('posts_per_day')}"
-            )
-
+            # ------------------------------------------------
+            # WAIT UNTIL ENABLED
+            # ------------------------------------------------
 
             if not cfg.get(
                 "enabled",
                 False
             ):
 
-                time.sleep(3)
+                time.sleep(2)
 
                 continue
 
@@ -1722,22 +1463,18 @@ def cycle():
                 continue
 
 
-            # ------------------------------------------------
-            # POSTS PER DAY
-            # ------------------------------------------------
-
             try:
 
                 posts_per_day = int(
                     cfg.get(
                         "posts_per_day",
-                        1
+                        3
                     )
                 )
 
             except Exception:
 
-                posts_per_day = 1
+                posts_per_day = 3
 
 
             posts_per_day = max(
@@ -1750,51 +1487,36 @@ def cycle():
 
 
             # ------------------------------------------------
-            # SELECT PRODUCTS
+            # SELECT ONE PRODUCT
+            #
+            # IMPORTANT:
+            # We generate ONE Reel at a time.
+            # This prevents multiple FFmpeg processes
+            # from running simultaneously.
             # ------------------------------------------------
 
-            try:
-
-                last_index = int(
-                    cfg.get(
-                        "last_product_index",
-                        0
-                    )
+            last_index = int(
+                cfg.get(
+                    "last_product_index",
+                    0
                 )
-
-            except Exception:
-
-                last_index = 0
+            )
 
 
-            selected = []
+            product = products[
+                last_index %
+                len(products)
+            ]
 
 
-            for _ in range(
-                min(
-                    posts_per_day,
-                    len(products)
-                )
-            ):
-
-                product = products[
-                    last_index %
-                    len(products)
-                ]
-
-                selected.append(
-                    product
-                )
-
-                last_index += 1
+            last_index = (
+                last_index + 1
+            ) % len(products)
 
 
             cfg[
                 "last_product_index"
-            ] = (
-                last_index %
-                len(products)
-            )
+            ] = last_index
 
 
             save(
@@ -1803,98 +1525,63 @@ def cycle():
             )
 
 
-            created_now = 0
+            log(
+                f"Starting Reel: {product.get('name', 'Unknown')}"
+            )
 
 
             # ------------------------------------------------
-            # CREATE REELS
+            # CREATE ONE REEL
             # ------------------------------------------------
 
-            for product in selected:
+            try:
 
-                current_cfg = load(
-                    CFG,
-                    DEFAULT_CFG
+                package_dir = create_reel_package(
+                    product
                 )
 
 
-                if not current_cfg.get(
-                    "enabled",
-                    False
-                ):
+                STATE["created"] += 1
 
-                    log(
-                        "Autopilot stopped during creation."
+                STATE["last_product"] = (
+                    product.get(
+                        "name",
+                        "Unknown"
                     )
-
-                    break
-
-
-                try:
-
-                    log(
-                        "Starting Reel creation for: "
-                        + product.get(
-                            "name",
-                            "Unknown"
-                        )
-                    )
+                )
 
 
-                    package_dir = create_reel_package(
-                        product
-                    )
+                STATE["last_package"] = (
+                    package_dir.name
+                )
 
 
-                    created_now += 1
+                video_file = (
+                    package_dir /
+                    "video.mp4"
+                )
 
-                    STATE["created"] += 1
 
-                    STATE["last_product"] = (
-                        product.get(
-                            "name",
-                            "Unknown"
-                        )
-                    )
+                if video_file.exists():
 
-                    STATE["last_package"] = (
+                    STATE["last_video"] = (
                         package_dir.name
+                        + "/video.mp4"
                     )
 
 
-                    video_file = (
-                        package_dir /
-                        "video.mp4"
-                    )
+                log(
+                    "Reel package created: "
+                    + package_dir.name
+                )
 
 
-                    if video_file.exists():
+            except Exception as e:
 
-                        STATE["last_video"] = (
-                            package_dir.name
-                            + "/video.mp4"
-                        )
-
-                    else:
-
-                        STATE["last_video"] = None
-
-
-                    STATE["last_error"] = None
-
-
-                    log(
-                        "Reel package created: "
-                        f"{package_dir.name}"
-                    )
-
-
-                except Exception as e:
-
-                    log_exception(
-                        "REEL CREATION ERROR",
-                        e
-                    )
+                log(
+                    "Reel creation error: "
+                    + str(e)
+                )
 
 
             STATE["last_run"] = (
@@ -1904,13 +1591,8 @@ def cycle():
             )
 
 
-            log(
-                f"Created {created_now} Reel package(s)."
-            )
-
-
             # ------------------------------------------------
-            # WAIT
+            # DISTRIBUTE POSTS THROUGH THE DAY
             # ------------------------------------------------
 
             interval = int(
@@ -1923,12 +1605,9 @@ def cycle():
 
 
             log(
-                f"Next creation cycle in approximately "
-                f"{interval} seconds."
+                f"Next Reel scheduled in approximately "
+                f"{interval // 3600} hour(s)."
             )
-
-
-            stopped = False
 
 
             for _ in range(
@@ -1953,21 +1632,13 @@ def cycle():
                         "Autopilot stopped."
                     )
 
-                    stopped = True
-
                     break
-
-
-            if stopped:
-
-                continue
 
 
         except Exception as e:
 
-            log_exception(
-                "AUTOPILOT ERROR",
-                e
+            log(
+                f"Autopilot error: {e}"
             )
 
             time.sleep(10)
@@ -2003,7 +1674,7 @@ def home():
 <meta name="viewport"
 content="width=device-width,initial-scale=1">
 
-<title>@waititsonsale</title>
+<title>WaitItsOnSale</title>
 
 <style>
 
@@ -2117,16 +1788,6 @@ select {
     font-weight:800;
 }
 
-.error {
-    background:#ffe5e5;
-    color:#a00000;
-    padding:15px;
-    border-radius:12px;
-    margin-top:15px;
-    white-space:pre-wrap;
-    word-break:break-word;
-}
-
 .small {
     color:#666;
     font-size:14px;
@@ -2140,14 +1801,14 @@ select {
 
 <div class="container">
 
-<h1>WaitItsOnSale</h1>
+<h1>⚡ WaitItsOnSale</h1>
 
 
 <div class="card">
 
 <div id="s"
 class="status">
-Loading...
+Loading…
 </div>
 
 <p id="x">
@@ -2157,16 +1818,14 @@ Loading status...
 <button
 class="start"
 onclick="run(1)">
-START
+▶ START
 </button>
 
 <button
 class="stop"
 onclick="run(0)">
-STOP
+■ STOP
 </button>
-
-<div id="error"></div>
 
 </div>
 
@@ -2185,7 +1844,7 @@ id="p"
 type="number"
 min="1"
 max="10"
-value="1">
+value="3">
 
 
 <div class="label">
@@ -2195,11 +1854,11 @@ Mode
 <select id="m">
 
 <option value="draft">
-Draft - generate videos
+Draft — generate videos
 </option>
 
 <option value="publish">
-Publish - reserved for future API
+Publish — reserved for future API
 </option>
 
 </select>
@@ -2212,19 +1871,19 @@ Voice
 <select id="v">
 
 <option value="en-IN-NeerjaNeural">
-Indian English - Female
+Indian English — Female
 </option>
 
 <option value="en-IN-PrabhatNeural">
-Indian English - Male
+Indian English — Male
 </option>
 
 <option value="en-US-AriaNeural">
-US English - Female
+US English — Female
 </option>
 
 <option value="en-US-GuyNeural">
-US English - Male
+US English — Male
 </option>
 
 </select>
@@ -2254,41 +1913,30 @@ No Reel created yet.
 
 <div class="card">
 
-<h2>System</h2>
-
-<p id="system">
-Checking...
-</p>
-
-</div>
-
-
-<div class="card">
-
 <h2>How it works</h2>
 
 <p>
-<b>1.</b> The autopilot selects products.
+<b>1.</b> Selects the next product.
 </p>
 
 <p>
-<b>2.</b> It creates the script and caption.
+<b>2.</b> Creates the script and caption.
 </p>
 
 <p>
-<b>3.</b> It generates the voiceover.
+<b>3.</b> Creates the voiceover.
 </p>
 
 <p>
-<b>4.</b> FFmpeg creates a vertical 9:16 video.
+<b>4.</b> Creates one memory-optimized 9:16 video.
 </p>
 
 <p>
-<b>5.</b> The finished MP4 appears here.
+<b>5.</b> Waits until the next scheduled Reel.
 </p>
 
 <p class="small">
-No paid AI API is required.
+Optimized for Render's free 512 MB instance.
 </p>
 
 </div>
@@ -2314,8 +1962,8 @@ async function getStatus() {
         document.getElementById("s")
             .textContent =
             data.enabled
-            ? "RUNNING"
-            : "STOPPED";
+            ? "🟢 RUNNING"
+            : "⚪ STOPPED";
 
 
         document.getElementById("x")
@@ -2324,20 +1972,20 @@ async function getStatus() {
             + data.created
             + "<br>"
             + "Last run: "
-            + (data.last_run || "-")
+            + (data.last_run || "—")
             + "<br>"
             + "Last product: "
-            + (data.last_product || "-")
+            + (data.last_product || "—")
             + "<br>"
             + "Worker: "
-            + (data.worker_running ? "Running" : "Not running")
+            + (data.worker_running ? "Running" : "Stopped")
             + "<br><br>"
             + data.message;
 
 
         document.getElementById("p")
             .value =
-            data.posts_per_day || 1;
+            data.posts_per_day || 3;
 
 
         document.getElementById("m")
@@ -2350,35 +1998,6 @@ async function getStatus() {
             data.voice || "en-IN-NeerjaNeural";
 
 
-        if (data.last_error) {
-
-            document.getElementById("error")
-                .innerHTML =
-                '<div class="error">'
-                + "<b>Last error:</b><br>"
-                + escapeHtml(data.last_error)
-                + "</div>";
-
-        } else {
-
-            document.getElementById("error")
-                .innerHTML = "";
-
-        }
-
-
-        document.getElementById("system")
-            .innerHTML =
-            "FFmpeg: "
-            + (data.ffmpeg ? "Available" : "Unavailable")
-            + "<br>"
-            + "TTS package: "
-            + (data.tts_available ? "Available" : "Unavailable")
-            + "<br>"
-            + "Products: "
-            + data.product_count;
-
-
         if (data.last_package) {
 
             let html =
@@ -2389,7 +2008,7 @@ async function getStatus() {
                 +
                 '<br><br>'
                 +
-                escapeHtml(data.last_package);
+                data.last_package;
 
 
             if (data.last_video) {
@@ -2427,7 +2046,7 @@ async function getStatus() {
                     +
                     '&download=1">'
                     +
-                    'DOWNLOAD REEL'
+                    '⬇ DOWNLOAD REEL'
                     +
                     '</a>';
             }
@@ -2447,21 +2066,9 @@ async function getStatus() {
 
         document.getElementById("s")
             .textContent =
-            "ERROR";
+            "🔴 CONNECTION ERROR";
 
     }
-
-}
-
-
-function escapeHtml(value) {
-
-    return String(value)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
 
 }
 
@@ -2486,7 +2093,10 @@ async function run(value) {
             }
         );
 
-        getStatus();
+        setTimeout(
+            getStatus,
+            500
+        );
 
     }
 
@@ -2582,24 +2192,6 @@ def status():
         DEFAULT_CFG
     )
 
-    products = load(
-        QUEUE,
-        DEFAULT_PRODUCTS
-    )
-
-
-    # Check TTS.
-    try:
-
-        import edge_tts
-
-        tts_available = True
-
-    except Exception:
-
-        tts_available = False
-
-
     return JSONResponse({
 
         **STATE,
@@ -2633,17 +2225,8 @@ def status():
         "posts_per_day":
             cfg.get(
                 "posts_per_day",
-                1
-            ),
-
-        "ffmpeg":
-            ffmpeg_available(),
-
-        "tts_available":
-            tts_available,
-
-        "product_count":
-            len(products)
+                3
+            )
 
     })
 
@@ -2669,14 +2252,9 @@ def video(
     )
 
 
-    # Security.
-    try:
-
-        requested.relative_to(
-            drafts_root
-        )
-
-    except ValueError:
+    if not str(requested).startswith(
+        str(drafts_root)
+    ):
 
         return JSONResponse(
             {
@@ -2801,16 +2379,14 @@ async def run(
 
     if enabled:
 
-        STATE["last_error"] = None
-
         log(
-            "START pressed."
+            "START pressed. Autopilot enabled."
         )
 
     else:
 
         log(
-            "STOP pressed."
+            "STOP pressed. Autopilot disabled."
         )
 
 
@@ -2860,7 +2436,7 @@ async def config(
 
         except Exception:
 
-            cfg["posts_per_day"] = 1
+            cfg["posts_per_day"] = 3
 
 
     if "mode" in body:
@@ -2981,6 +2557,7 @@ async def add_product(
 
         "product":
             product
+
     }
 
 
@@ -3023,7 +2600,7 @@ def health():
             "waititsonsale-autopilot",
 
         "version":
-            "4.0",
+            "5.0-memory-optimized",
 
         "ffmpeg":
             ffmpeg_available(),
@@ -3042,8 +2619,7 @@ def start_worker():
 
     worker = threading.Thread(
         target=cycle,
-        daemon=True,
-        name="autopilot-worker"
+        daemon=True
     )
 
     worker.start()
