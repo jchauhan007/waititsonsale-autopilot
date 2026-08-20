@@ -5,8 +5,8 @@ import time
 import asyncio
 import urllib.request
 import subprocess
-import re
 import shutil
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 # CONFIGURATION
 # ============================================================
 
-BASE = Path(__file__).parent
+BASE = Path(__file__).resolve().parent
 
 DATA = BASE / "data"
 DATA.mkdir(parents=True, exist_ok=True)
@@ -38,21 +38,13 @@ ACTIVITY_LOG = DATA / "activity.log"
 
 DEFAULT_CFG = {
     "handle": "@waititsonsale",
-
     "posts_per_day": 3,
-
     "enabled": False,
-
     "mode": "draft",
-
     "voice": "en-IN-NeerjaNeural",
-
     "video_width": 720,
-
     "video_height": 1280,
-
     "video_fps": 24,
-
     "last_product_index": 0
 }
 
@@ -62,7 +54,6 @@ DEFAULT_CFG = {
 # ============================================================
 
 DEFAULT_PRODUCTS = [
-
     {
         "name": "Motion Sensor Night Light",
         "price": "₹349",
@@ -70,7 +61,6 @@ DEFAULT_PRODUCTS = [
         "why": "an instant visual before-and-after with a clear everyday use case",
         "image_url": ""
     },
-
     {
         "name": "Foldable Laptop Stand",
         "price": "₹399",
@@ -78,7 +68,6 @@ DEFAULT_PRODUCTS = [
         "why": "a simple productivity upgrade that is easy to demonstrate",
         "image_url": ""
     },
-
     {
         "name": "Portable Mini Chopper",
         "price": "₹499",
@@ -86,7 +75,6 @@ DEFAULT_PRODUCTS = [
         "why": "strong visual demo potential and broad household appeal",
         "image_url": ""
     },
-
     {
         "name": "Magnetic Cable Organizer",
         "price": "₹199",
@@ -94,7 +82,6 @@ DEFAULT_PRODUCTS = [
         "why": "solves a common desk problem at a low price",
         "image_url": ""
     },
-
     {
         "name": "Mini Electric Cleaning Brush",
         "price": "₹299",
@@ -102,7 +89,6 @@ DEFAULT_PRODUCTS = [
         "why": "satisfying cleaning demonstration potential",
         "image_url": ""
     }
-
 ]
 
 
@@ -127,27 +113,17 @@ STATE = {
 # ============================================================
 
 def load(path, default):
-
     if not path.exists():
         save(path, default)
 
     try:
-        return json.loads(
-            path.read_text(
-                encoding="utf-8"
-            )
-        )
-
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return default
 
 
 def save(path, obj):
-
-    path.parent.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     path.write_text(
         json.dumps(
@@ -164,7 +140,6 @@ def save(path, obj):
 # ============================================================
 
 def log(message):
-
     STATE["message"] = str(message)
 
     timestamp = datetime.now().strftime(
@@ -172,28 +147,22 @@ def log(message):
     )
 
     try:
-
         with ACTIVITY_LOG.open(
             "a",
             encoding="utf-8"
         ) as f:
-
             f.write(
                 f"[{timestamp}] {message}\n"
             )
-
     except Exception:
         pass
 
-    print(f"[{timestamp}] {message}", flush=True)
-
 
 # ============================================================
-# UTILITY
+# UTILITIES
 # ============================================================
 
 def clean_filename(value):
-
     value = str(value)
 
     value = re.sub(
@@ -206,27 +175,19 @@ def clean_filename(value):
 
 
 def wrap_text(text, width=28):
-
     words = str(text).split()
 
     lines = []
-
     current = ""
 
     for word in words:
-
         if len(current) + len(word) + 1 <= width:
-
             if current:
                 current += " "
-
             current += word
-
         else:
-
             if current:
                 lines.append(current)
-
             current = word
 
     if current:
@@ -235,40 +196,23 @@ def wrap_text(text, width=28):
     return "\n".join(lines)
 
 
-# ============================================================
-# FFMPEG
-# ============================================================
+def ffmpeg_available():
+    path = shutil.which("ffmpeg")
 
-def get_ffmpeg():
+    if path:
+        log(f"FFmpeg found: {path}")
+        return True
 
-    # First try normal system FFmpeg.
-    system_ffmpeg = shutil.which("ffmpeg")
+    return False
 
-    if system_ffmpeg:
-        return system_ffmpeg
 
-    # Then use imageio-ffmpeg.
-    try:
+def get_ffmpeg_path():
+    path = shutil.which("ffmpeg")
 
-        import imageio_ffmpeg
-
-        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
-
-        if ffmpeg_path and Path(ffmpeg_path).exists():
-            return ffmpeg_path
-
-    except Exception as e:
-
-        log(
-            f"imageio-ffmpeg unavailable: {e}"
-        )
+    if path:
+        return path
 
     return None
-
-
-def ffmpeg_available():
-
-    return get_ffmpeg() is not None
 
 
 # ============================================================
@@ -276,33 +220,23 @@ def ffmpeg_available():
 # ============================================================
 
 def random_hook(product):
-
-    price = product.get(
-        "price",
-        ""
-    )
+    price = product.get("price", "")
 
     hooks = [
-
         f"WAIT… why is this only {price}?",
-
         f"I found something actually useful for {price}.",
-
         "Okay, this might actually be worth buying.",
-
         "Why did nobody tell me about this before?",
-
         "This is one of those products you don't know you need until you see it.",
-
         "POV: you find something genuinely useful for under ₹500.",
-
         f"Would you buy this for {price}?",
-
         "This little product solves a surprisingly annoying problem."
-
     ]
 
-    return random.choice(hooks)
+    # Avoid random hooks with problematic characters in FFmpeg.
+    return hooks[
+        int(time.time()) % len(hooks)
+    ]
 
 
 # ============================================================
@@ -310,12 +244,10 @@ def random_hook(product):
 # ============================================================
 
 def download_image(url, destination):
-
     if not url:
         return None
 
     try:
-
         request = urllib.request.Request(
             url,
             headers={
@@ -327,25 +259,24 @@ def download_image(url, destination):
             request,
             timeout=20
         ) as response:
-
             data = response.read()
 
         if not data:
-            raise ValueError("Downloaded image is empty")
+            raise ValueError("Downloaded image is empty.")
 
         destination.write_bytes(data)
 
-        if destination.stat().st_size == 0:
-            raise ValueError("Image file is empty")
+        if destination.stat().st_size < 100:
+            raise ValueError("Downloaded image is too small.")
+
+        log(
+            f"Product image downloaded: {destination.stat().st_size} bytes"
+        )
 
         return destination
 
     except Exception as e:
-
-        log(
-            f"Image download failed: {e}"
-        )
-
+        log(f"Image download failed: {e}")
         return None
 
 
@@ -353,29 +284,15 @@ def download_image(url, destination):
 # CREATE PLACEHOLDER IMAGE
 # ============================================================
 
-def create_placeholder_image(
-    product,
-    output
-):
-
+def create_placeholder_image(product, output):
     try:
-
-        from PIL import Image
-        from PIL import ImageDraw
-        from PIL import ImageFont
-
+        from PIL import Image, ImageDraw, ImageFont
     except Exception as e:
-
-        log(
-            f"Pillow unavailable: {e}"
-        )
-
+        log(f"Pillow unavailable: {e}")
         return None
-
 
     width = 720
     height = 1280
-
 
     image = Image.new(
         "RGB",
@@ -385,61 +302,36 @@ def create_placeholder_image(
 
     draw = ImageDraw.Draw(image)
 
+    font_path_bold = (
+        "/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans-Bold.ttf"
+    )
 
-    # --------------------------------------------------------
-    # Fonts
-    # --------------------------------------------------------
-
-    font_paths = [
-
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
-
-    ]
-
-
-    font_path = None
-
-    for path in font_paths:
-
-        if Path(path).exists():
-
-            font_path = path
-            break
-
+    font_path_regular = (
+        "/usr/share/fonts/truetype/dejavu/"
+        "DejaVuSans.ttf"
+    )
 
     try:
+        font_large = ImageFont.truetype(
+            font_path_bold,
+            52
+        )
 
-        if font_path:
+        font_medium = ImageFont.truetype(
+            font_path_bold,
+            34
+        )
 
-            font_large = ImageFont.truetype(
-                font_path,
-                52
-            )
-
-            font_medium = ImageFont.truetype(
-                font_path,
-                34
-            )
-
-            font_small = ImageFont.truetype(
-                font_path,
-                28
-            )
-
-        else:
-
-            font_large = None
-            font_medium = None
-            font_small = None
+        font_small = ImageFont.truetype(
+            font_path_regular,
+            28
+        )
 
     except Exception:
-
         font_large = None
         font_medium = None
         font_small = None
-
 
     name = product.get(
         "name",
@@ -456,11 +348,6 @@ def create_placeholder_image(
         "Product"
     )
 
-
-    # --------------------------------------------------------
-    # Header
-    # --------------------------------------------------------
-
     draw.text(
         (50, 80),
         "@waititsonsale",
@@ -468,16 +355,10 @@ def create_placeholder_image(
         font=font_medium
     )
 
-
-    # --------------------------------------------------------
-    # Product card
-    # --------------------------------------------------------
-
     card_x1 = 45
     card_y1 = 380
     card_x2 = 675
     card_y2 = 850
-
 
     draw.rounded_rectangle(
         (
@@ -490,28 +371,19 @@ def create_placeholder_image(
         fill=(255, 255, 255)
     )
 
-
     wrapped = wrap_text(
         name,
         20
     )
 
+    bbox = draw.multiline_textbbox(
+        (0, 0),
+        wrapped,
+        font=font_large,
+        spacing=10
+    )
 
-    try:
-
-        bbox = draw.multiline_textbbox(
-            (0, 0),
-            wrapped,
-            font=font_large,
-            spacing=10
-        )
-
-        text_width = bbox[2] - bbox[0]
-
-    except Exception:
-
-        text_width = 500
-
+    text_width = bbox[2] - bbox[0]
 
     draw.multiline_text(
         (
@@ -525,14 +397,12 @@ def create_placeholder_image(
         spacing=10
     )
 
-
     draw.text(
         (70, 730),
         f"{category}  •  {price}",
         fill=(50, 50, 50),
         font=font_medium
     )
-
 
     draw.text(
         (50, 970),
@@ -541,7 +411,6 @@ def create_placeholder_image(
         font=font_medium
     )
 
-
     draw.text(
         (50, 1025),
         "SAVE THIS REEL",
@@ -549,25 +418,59 @@ def create_placeholder_image(
         font=font_medium
     )
 
-
     image.save(
         output,
         "JPEG",
-        quality=88,
+        quality=90,
         optimize=True
     )
 
-
     if not output.exists() or output.stat().st_size == 0:
-
-        log(
-            "Placeholder image was empty."
-        )
-
+        log("Placeholder image creation failed.")
         return None
 
+    log(
+        f"Placeholder image created: {output.stat().st_size} bytes"
+    )
 
     return output
+
+
+# ============================================================
+# IMAGE VALIDATION
+# ============================================================
+
+def validate_image(path):
+    if not path:
+        return False
+
+    path = Path(path)
+
+    if not path.exists():
+        log("Image validation failed: file does not exist.")
+        return False
+
+    if path.stat().st_size < 100:
+        log("Image validation failed: file is empty/small.")
+        return False
+
+    try:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img.verify()
+
+        log(
+            f"Image validated successfully: {path.name}"
+        )
+
+        return True
+
+    except Exception as e:
+        log(
+            f"Image validation failed: {e}"
+        )
+        return False
 
 
 # ============================================================
@@ -579,9 +482,7 @@ async def generate_tts_async(
     output,
     voice
 ):
-
     try:
-
         import edge_tts
 
         communicate = edge_tts.Communicate(
@@ -593,33 +494,10 @@ async def generate_tts_async(
             str(output)
         )
 
-        if not output.exists():
-
-            log(
-                "TTS did not create an audio file."
-            )
-
-            return False
-
-
-        if output.stat().st_size == 0:
-
-            log(
-                "TTS created an empty audio file."
-            )
-
-            return False
-
-
         return True
 
-
     except Exception as e:
-
-        log(
-            f"TTS error: {e}"
-        )
-
+        log(f"TTS error: {e}")
         return False
 
 
@@ -628,10 +506,8 @@ def generate_voiceover(
     output,
     voice
 ):
-
     try:
-
-        return asyncio.run(
+        result = asyncio.run(
             generate_tts_async(
                 text,
                 output,
@@ -639,81 +515,42 @@ def generate_voiceover(
             )
         )
 
+        if result and output.exists():
+            if output.stat().st_size > 100:
+                log(
+                    f"Voiceover created: {output.stat().st_size} bytes"
+                )
+                return True
+
+        log("Voiceover file was not created correctly.")
+        return False
+
     except Exception as e:
-
-        log(
-            f"TTS runtime error: {e}"
-        )
-
+        log(f"TTS runtime error: {e}")
         return False
 
 
 # ============================================================
-# FIND FONT
+# CREATE TEXT FILE FOR FFMPEG
+#
+# This avoids putting long product text directly inside
+# FFmpeg's filter command.
 # ============================================================
 
-def get_font():
+def create_ffmpeg_text_file(path, text):
+    try:
+        path.write_text(
+            str(text),
+            encoding="utf-8"
+        )
 
-    candidates = [
+        return path
 
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-
-        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
-
-    ]
-
-    for font in candidates:
-
-        if Path(font).exists():
-            return font
-
-    return None
-
-
-# ============================================================
-# ESCAPE FFMPEG TEXT
-# ============================================================
-
-def escape_ffmpeg_text(text):
-
-    text = str(text)
-
-    text = text.replace(
-        "\\",
-        "\\\\"
-    )
-
-    text = text.replace(
-        ":",
-        "\\:"
-    )
-
-    text = text.replace(
-        "'",
-        "\\'"
-    )
-
-    text = text.replace(
-        "%",
-        "\\%"
-    )
-
-    text = text.replace(
-        "[",
-        "\\["
-    )
-
-    text = text.replace(
-        "]",
-        "\\]"
-    )
-
-    text = text.replace(
-        "\n",
-        " "
-    )
-
-    return text
+    except Exception as e:
+        log(
+            f"Could not create FFmpeg text file: {e}"
+        )
+        return None
 
 
 # ============================================================
@@ -727,23 +564,10 @@ def create_video(
     product,
     scenes
 ):
-
-    ffmpeg = get_ffmpeg()
-
-    if not ffmpeg:
-
-        log(
-            "FFmpeg is NOT available."
-        )
-
-        return False
-
-
     cfg = load(
         CFG,
         DEFAULT_CFG
     )
-
 
     width = int(
         cfg.get(
@@ -752,14 +576,12 @@ def create_video(
         )
     )
 
-
     height = int(
         cfg.get(
             "video_height",
             1280
         )
     )
-
 
     fps = int(
         cfg.get(
@@ -768,6 +590,32 @@ def create_video(
         )
     )
 
+    # Safety limits for Render.
+    width = max(360, min(1080, width))
+    height = max(640, min(1920, height))
+    fps = max(15, min(30, fps))
+
+    # --------------------------------------------------------
+    # Validate FFmpeg
+    # --------------------------------------------------------
+
+    ffmpeg = get_ffmpeg_path()
+
+    if not ffmpeg:
+        log("FFmpeg executable was not found.")
+        return False
+
+    # --------------------------------------------------------
+    # Validate image
+    # --------------------------------------------------------
+
+    if not validate_image(image_path):
+        log("Video aborted because image is invalid.")
+        return False
+
+    # --------------------------------------------------------
+    # Scene durations
+    # --------------------------------------------------------
 
     durations = [
         3,
@@ -777,143 +625,91 @@ def create_video(
         4
     ]
 
+    total_duration = sum(durations)
 
-    total_duration = sum(
-        durations
+    # --------------------------------------------------------
+    # Create text files
+    # --------------------------------------------------------
+
+    text_dir = output_path.parent / "ffmpeg_text"
+    text_dir.mkdir(
+        parents=True,
+        exist_ok=True
     )
 
-
-    # --------------------------------------------------------
-    # Make sure image exists
-    # --------------------------------------------------------
-
-    if not image_path.exists():
-
-        log(
-            "Video input image does not exist."
-        )
-
-        return False
-
-
-    if image_path.stat().st_size == 0:
-
-        log(
-            "Video input image is empty."
-        )
-
-        return False
-
-
-    # --------------------------------------------------------
-    # Make sure previous output is removed
-    # --------------------------------------------------------
-
-    try:
-
-        if output_path.exists():
-            output_path.unlink()
-
-    except Exception as e:
-
-        log(
-            f"Could not remove old video: {e}"
-        )
-
-
-    # --------------------------------------------------------
-    # Text filters
-    # --------------------------------------------------------
-
-    filter_parts = [
-
-        f"scale={width}:{height}:force_original_aspect_ratio=decrease",
-
-        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2",
-
-        "setsar=1"
-
-    ]
-
-
-    font = get_font()
-
-
-    current = 0
-
+    text_files = []
 
     for index, scene in enumerate(scenes):
+        text_path = (
+            text_dir /
+            f"scene_{index + 1}.txt"
+        )
 
-        start = current
-
-        end = current + durations[index]
-
-        text = escape_ffmpeg_text(
+        created = create_ffmpeg_text_file(
+            text_path,
             scene["on_screen_text"]
         )
 
+        if not created:
+            return False
 
-        drawtext = (
-
-            "drawtext="
-
+        text_files.append(
+            created
         )
 
+    # --------------------------------------------------------
+    # Build video filter
+    # --------------------------------------------------------
 
-        if font:
+    filter_parts = []
 
-            drawtext += (
-                f"fontfile='{font}':"
-            )
+    current = 0
 
-
-        drawtext += (
-
-            f"text='{text}':"
-
-            "fontcolor=white:"
-
-            "fontsize=42:"
-
-            "borderw=3:"
-
-            "bordercolor=black:"
-
-            "x=(w-text_w)/2:"
-
-            "y=h*0.78:"
-
-            f"enable='between(t,{start},{end})'"
-
-        )
-
+    for index, text_file in enumerate(text_files):
+        start = current
+        end = current + durations[index]
 
         filter_parts.append(
-            drawtext
+            "drawtext="
+            f"fontfile=/usr/share/fonts/truetype/dejavu/"
+            f"DejaVuSans-Bold.ttf:"
+            f"textfile={text_file}:"
+            "fontcolor=white:"
+            "fontsize=42:"
+            "borderw=3:"
+            "bordercolor=black:"
+            "x=(w-text_w)/2:"
+            "y=h*0.78:"
+            f"enable='between(t,{start},{end})'"
         )
-
 
         current = end
 
+    # --------------------------------------------------------
+    # Scale image to 9:16
+    # --------------------------------------------------------
 
-    filter_parts.append(
-        "format=yuv420p"
+    scale_filter = (
+        f"scale={width}:{height}:"
+        "force_original_aspect_ratio=decrease,"
+        f"pad={width}:{height}:"
+        f"(ow-iw)/2:(oh-ih)/2:"
+        "color=black"
     )
 
-
-    filter_complex = ",".join(
-        filter_parts
+    filter_complex = (
+        scale_filter
+        + ","
+        + ",".join(filter_parts)
+        + ",format=yuv420p"
     )
 
-
-    # ========================================================
-    # FFMPEG COMMAND
-    # ========================================================
+    # --------------------------------------------------------
+    # Build FFmpeg command
+    # --------------------------------------------------------
 
     cmd = [
-
         ffmpeg,
-
         "-y",
 
         "-hide_banner",
@@ -932,49 +728,26 @@ def create_video(
 
         "-i",
         str(image_path)
-
     ]
 
-
-    # --------------------------------------------------------
-    # Audio
-    # --------------------------------------------------------
-
-    use_audio = (
-
+    has_audio = (
         audio_path is not None
-
-        and audio_path.exists()
-
-        and audio_path.stat().st_size > 0
-
+        and Path(audio_path).exists()
+        and Path(audio_path).stat().st_size > 100
     )
 
-
-    if use_audio:
-
+    if has_audio:
         cmd.extend([
-
             "-i",
             str(audio_path)
-
         ])
 
-
-    # --------------------------------------------------------
-    # Video settings
-    # --------------------------------------------------------
-
     cmd.extend([
-
-        "-filter_complex",
-        filter_complex,
-
-        "-map",
-        "0:v:0",
-
         "-t",
         str(total_duration),
+
+        "-vf",
+        filter_complex,
 
         "-r",
         str(fps),
@@ -992,18 +765,16 @@ def create_video(
         "yuv420p",
 
         "-movflags",
-        "+faststart"
+        "+faststart",
 
+        "-threads",
+        "1"
     ])
 
-
-    # --------------------------------------------------------
-    # Audio settings
-    # --------------------------------------------------------
-
-    if use_audio:
-
+    if has_audio:
         cmd.extend([
+            "-map",
+            "0:v:0",
 
             "-map",
             "1:a:0",
@@ -1014,139 +785,138 @@ def create_video(
             "-b:a",
             "96k",
 
-            "-ar",
-            "44100",
+            "-af",
+            "apad",
 
-            "-ac",
-            "2"
-
+            "-t",
+            str(total_duration)
         ])
-
 
     else:
-
         cmd.extend([
-
             "-an"
-
         ])
-
-
-    # --------------------------------------------------------
-    # IMPORTANT:
-    # Do NOT use -shortest here.
-    #
-    # It could cause a very short/empty result if Edge TTS
-    # produces an unexpectedly short audio stream.
-    # --------------------------------------------------------
 
     cmd.append(
         str(output_path)
     )
 
-
-    log(
-        "Starting FFmpeg..."
-    )
-
-
-    log(
-        f"FFmpeg executable: {ffmpeg}"
-    )
-
+    # --------------------------------------------------------
+    # Remove old output
+    # --------------------------------------------------------
 
     try:
+        if output_path.exists():
+            output_path.unlink()
+    except Exception:
+        pass
 
+    log(
+        f"Starting FFmpeg: {width}x{height} @ {fps}fps"
+    )
+
+    # --------------------------------------------------------
+    # Run FFmpeg
+    # --------------------------------------------------------
+
+    try:
         result = subprocess.run(
-
             cmd,
-
-            stdout=subprocess.PIPE,
-
+            stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
-
             timeout=300
-
         )
-
 
         stderr_text = (
-
             result.stderr.decode(
                 "utf-8",
-                errors="ignore"
+                errors="replace"
             )
-
             if result.stderr
-
             else ""
-
         )
-
 
         if result.returncode != 0:
-
             log(
-                "FFmpeg failed: "
+                "FFmpeg failed:\n"
                 + stderr_text[-3000:]
             )
-
             return False
-
-
-        # ----------------------------------------------------
-        # Verify output
-        # ----------------------------------------------------
-
-        if not output_path.exists():
-
-            log(
-                "FFmpeg completed but video file does not exist."
-            )
-
-            return False
-
-
-        file_size = output_path.stat().st_size
-
-
-        if file_size < 10000:
-
-            log(
-                f"Video file is suspiciously small: {file_size} bytes"
-            )
-
-            try:
-                output_path.unlink()
-            except Exception:
-                pass
-
-            return False
-
-
-        log(
-            f"Video created successfully: {file_size} bytes"
-        )
-
-
-        return True
-
 
     except subprocess.TimeoutExpired:
-
-        log(
-            "FFmpeg timed out after 300 seconds."
-        )
-
+        log("FFmpeg timed out after 300 seconds.")
+        return False
 
     except Exception as e:
-
         log(
-            f"Video generation error: {e}"
+            f"FFmpeg execution error: {e}"
         )
+        return False
 
+    # --------------------------------------------------------
+    # Verify output
+    # --------------------------------------------------------
 
-    return False
+    if not output_path.exists():
+        log(
+            "FFmpeg reported success but video file does not exist."
+        )
+        return False
+
+    size = output_path.stat().st_size
+
+    if size < 10_000:
+        log(
+            f"Video file is suspiciously small: {size} bytes"
+        )
+        return False
+
+    # --------------------------------------------------------
+    # Use ffprobe if available
+    # --------------------------------------------------------
+
+    ffprobe = shutil.which("ffprobe")
+
+    if ffprobe:
+        try:
+            probe = subprocess.run(
+                [
+                    ffprobe,
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration,size",
+                    "-of",
+                    "default=noprint_wrappers=1",
+                    str(output_path)
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=30
+            )
+
+            probe_text = (
+                probe.stdout.decode(
+                    "utf-8",
+                    errors="replace"
+                )
+            )
+
+            log(
+                "Video verification:\n"
+                + probe_text.strip()
+            )
+
+        except Exception as e:
+            log(
+                f"ffprobe verification skipped: {e}"
+            )
+
+    log(
+        f"VIDEO CREATED SUCCESSFULLY: {size} bytes"
+    )
+
+    return True
 
 
 # ============================================================
@@ -1154,137 +924,114 @@ def create_video(
 # ============================================================
 
 def create_reel_package(product):
-
     STATE["creating"] = True
 
     try:
-
         cfg = load(
             CFG,
             DEFAULT_CFG
         )
-
 
         handle = cfg.get(
             "handle",
             "@waititsonsale"
         )
 
-
         name = product.get(
             "name",
             "Interesting Product"
         )
-
 
         price = product.get(
             "price",
             "Check current price"
         )
 
-
         category = product.get(
             "category",
             "General"
         )
-
 
         why = product.get(
             "why",
             "a useful everyday product"
         )
 
-
         image_url = product.get(
             "image_url",
             ""
         )
 
-
         hook = random_hook(
             product
         )
-
 
         # ====================================================
         # SCENES
         # ====================================================
 
         scenes = [
-
             {
                 "time": "0-3s",
-
-                "visual":
-                    f"Show a strong close-up of the {name}.",
-
-                "voiceover":
-                    hook,
-
-                "on_screen_text":
-                    hook
+                "visual": (
+                    f"Show a strong close-up of the {name}."
+                ),
+                "voiceover": hook,
+                "on_screen_text": hook
             },
-
             {
                 "time": "3-6s",
-
-                "visual":
-                    f"Show the {name} from multiple angles.",
-
-                "voiceover":
-                    f"This is the {name}, and it solves {why}.",
-
-                "on_screen_text":
-                    name
+                "visual": (
+                    f"Show the {name} from multiple angles."
+                ),
+                "voiceover": (
+                    f"This is the {name}, and it solves {why}."
+                ),
+                "on_screen_text": name
             },
-
             {
                 "time": "6-10s",
-
-                "visual":
-                    "Show the product being used.",
-
-                "voiceover":
-                    "The best part is how simple it is to use.",
-
-                "on_screen_text":
+                "visual": (
+                    "Show the product being used."
+                ),
+                "voiceover": (
+                    "The best part is how simple it is to use."
+                ),
+                "on_screen_text": (
                     "Simple. Useful. Practical."
+                )
             },
-
             {
                 "time": "10-13s",
-
-                "visual":
-                    "Show the result after using the product.",
-
-                "voiceover":
-                    f"And at around {price}, it could be worth checking out.",
-
-                "on_screen_text":
+                "visual": (
+                    "Show the result after using the product."
+                ),
+                "voiceover": (
+                    f"And at around {price}, it could be worth checking out."
+                ),
+                "on_screen_text": (
                     f"Example price: {price}"
+                )
             },
-
             {
                 "time": "13-17s",
-
-                "visual":
-                    "Finish with a clean product shot.",
-
-                "voiceover":
-                    f"Save this for later and follow {handle} for more useful finds.",
-
-                "on_screen_text":
+                "visual": (
+                    "Finish with a clean product shot."
+                ),
+                "voiceover": (
+                    f"Save this for later and follow "
+                    f"{handle} for more useful finds."
+                ),
+                "on_screen_text": (
                     f"Follow {handle}"
+                )
             }
-
         ]
-
 
         voiceover = "\n".join(
             scene["voiceover"]
             for scene in scenes
         )
-
 
         # ====================================================
         # CAPTION
@@ -1329,7 +1076,6 @@ Product links may be affiliate links.
 Prices and availability can change.
 """
 
-
         # ====================================================
         # PACKAGE DIRECTORY
         # ====================================================
@@ -1338,127 +1084,82 @@ Prices and availability can change.
             "%Y%m%d_%H%M%S"
         )
 
-
         safe_name = clean_filename(
             name
         )
-
 
         package_dir = (
             DRAFTS /
             f"{timestamp}_{safe_name}"
         )
 
-
         package_dir.mkdir(
             parents=True,
             exist_ok=True
         )
-
-
-        log(
-            f"Creating package: {package_dir.name}"
-        )
-
 
         # ====================================================
         # SCRIPT
         # ====================================================
 
         script_lines = [
-
             f"REEL: {name}",
-
             "=" * 60,
-
             f"CATEGORY: {category}",
-
             f"EXAMPLE PRICE: {price}",
-
             "",
-
             "CONCEPT",
-
-            f"Fast-paced product discovery Reel showing why the "
-            f"{name} is useful and worth considering.",
-
+            (
+                f"Fast-paced product discovery Reel showing why "
+                f"the {name} is useful and worth considering."
+            ),
             "",
-
             "SCENE PLAN",
-
             "-" * 60
-
         ]
 
-
         for scene in scenes:
-
             script_lines.extend([
-
                 "",
-
                 f"{scene['time']} — VISUAL",
-
                 scene["visual"],
-
                 "",
-
                 "VOICEOVER:",
-
                 scene["voiceover"],
-
                 "",
-
                 "ON-SCREEN TEXT:",
-
                 scene["on_screen_text"]
-
             ])
 
-
         script_lines.extend([
-
             "",
-
             "FULL VOICEOVER",
-
             "-" * 60,
-
             voiceover,
-
             "",
-
             "CAPTION",
-
             "-" * 60,
-
             caption
-
         ])
-
 
         script_text = "\n".join(
             script_lines
         )
-
 
         (package_dir / "script.txt").write_text(
             script_text.strip(),
             encoding="utf-8"
         )
 
-
         (package_dir / "caption.txt").write_text(
             caption.strip(),
             encoding="utf-8"
         )
 
-
         (package_dir / "voiceover.txt").write_text(
             voiceover.strip(),
             encoding="utf-8"
         )
-
 
         save(
             package_dir / "reel_plan.json",
@@ -1471,9 +1172,7 @@ Prices and availability can change.
             }
         )
 
-
         metadata = {
-
             "created_at":
                 datetime.now().isoformat(),
 
@@ -1483,15 +1182,14 @@ Prices and availability can change.
             "product":
                 product,
 
-            "reel":
-                {
-                    "duration_seconds": 17,
-                    "format": "9:16",
-                    "resolution": "720x1280",
-                    "hook": hook,
-                    "voiceover": voiceover,
-                    "scenes": scenes
-                },
+            "reel": {
+                "duration_seconds": 17,
+                "format": "9:16",
+                "resolution": "720x1280",
+                "hook": hook,
+                "voiceover": voiceover,
+                "scenes": scenes
+            },
 
             "caption":
                 caption,
@@ -1499,19 +1197,16 @@ Prices and availability can change.
             "status":
                 "ready",
 
-            "publishing":
-                {
-                    "instagram": False,
-                    "published": False
-                }
+            "publishing": {
+                "instagram": False,
+                "published": False
+            }
         }
-
 
         save(
             package_dir / "metadata.json",
             metadata
         )
-
 
         readme = f"""@waititsonsale
 REEL PACKAGE
@@ -1559,12 +1254,10 @@ IMPORTANT:
 Price and availability must be checked before publishing.
 """
 
-
         (package_dir / "README.txt").write_text(
             readme,
             encoding="utf-8"
         )
-
 
         # ====================================================
         # PRODUCT IMAGE
@@ -1575,43 +1268,31 @@ Price and availability must be checked before publishing.
             "product.jpg"
         )
 
-
         downloaded = None
 
-
         if image_url:
-
             downloaded = download_image(
                 image_url,
                 image_path
             )
 
-
         if not downloaded:
-
-            log(
-                "Using generated placeholder image."
-            )
-
             downloaded = create_placeholder_image(
                 product,
                 image_path
             )
 
-
         if not downloaded:
-
             log(
                 "Could not create product image."
             )
-
             return package_dir
 
-
-        log(
-            f"Image ready: {image_path.stat().st_size} bytes"
-        )
-
+        if not validate_image(downloaded):
+            log(
+                "Product image failed validation."
+            )
+            return package_dir
 
         # ====================================================
         # VOICEOVER
@@ -1622,41 +1303,21 @@ Price and availability must be checked before publishing.
             "voiceover.mp3"
         )
 
-
         voice = cfg.get(
             "voice",
             "en-IN-NeerjaNeural"
         )
 
-
-        log(
-            f"Generating voiceover using {voice}..."
-        )
-
-
         tts_success = generate_voiceover(
-
             voiceover,
-
             audio_path,
-
             voice
-
         )
 
-
-        if tts_success:
-
+        if not tts_success:
             log(
-                f"Voiceover ready: {audio_path.stat().st_size} bytes"
+                "TTS failed. Video will be created without audio."
             )
-
-        else:
-
-            log(
-                "Voiceover unavailable. Creating video without audio."
-            )
-
 
         # ====================================================
         # VIDEO
@@ -1667,52 +1328,75 @@ Price and availability must be checked before publishing.
             "video.mp4"
         )
 
-
         if ffmpeg_available():
 
             success = create_video(
-
                 image_path=downloaded,
-
                 audio_path=(
                     audio_path
                     if tts_success
                     else None
                 ),
-
                 output_path=video_path,
-
                 product=product,
-
                 scenes=scenes
-
             )
 
-
-            if not success:
-
+            if success:
                 log(
-                    "VIDEO GENERATION FAILED."
+                    f"Reel video ready: {video_path}"
                 )
-
             else:
-
                 log(
-                    "VIDEO GENERATION COMPLETE."
+                    "Video generation failed."
                 )
 
         else:
-
             log(
-                "FFMPEG UNAVAILABLE — video cannot be created."
+                "FFmpeg unavailable."
             )
 
+        # ====================================================
+        # UPDATE METADATA
+        # ====================================================
+
+        metadata_path = (
+            package_dir /
+            "metadata.json"
+        )
+
+        metadata = load(
+            metadata_path,
+            {}
+        )
+
+        metadata["status"] = (
+            "video_ready"
+            if video_path.exists()
+            and video_path.stat().st_size > 10000
+            else "video_failed"
+        )
+
+        metadata["video"] = {
+            "exists":
+                video_path.exists(),
+
+            "size_bytes":
+                (
+                    video_path.stat().st_size
+                    if video_path.exists()
+                    else 0
+                )
+        }
+
+        save(
+            metadata_path,
+            metadata
+        )
 
         return package_dir
 
-
     finally:
-
         STATE["creating"] = False
 
 
@@ -1721,23 +1405,18 @@ Price and availability must be checked before publishing.
 # ============================================================
 
 def cycle():
-
     STATE["worker_running"] = True
 
     log(
         "Autopilot worker started."
     )
 
-
     while True:
-
         try:
-
             cfg = load(
                 CFG,
                 DEFAULT_CFG
             )
-
 
             # ------------------------------------------------
             # WAIT UNTIL ENABLED
@@ -1747,51 +1426,31 @@ def cycle():
                 "enabled",
                 False
             ):
-
                 time.sleep(2)
-
                 continue
-
-
-            # Prevent duplicate generation.
-
-            if STATE["creating"]:
-
-                time.sleep(2)
-
-                continue
-
 
             products = load(
                 QUEUE,
                 DEFAULT_PRODUCTS
             )
 
-
             if not products:
-
                 log(
                     "No products available."
                 )
 
                 time.sleep(10)
-
                 continue
 
-
             try:
-
                 posts_per_day = int(
                     cfg.get(
                         "posts_per_day",
                         3
                     )
                 )
-
             except Exception:
-
                 posts_per_day = 3
-
 
             posts_per_day = max(
                 1,
@@ -1801,64 +1460,63 @@ def cycle():
                 )
             )
 
+            # ------------------------------------------------
+            # PREVENT MULTIPLE CREATIONS
+            # ------------------------------------------------
+
+            if STATE["creating"]:
+                time.sleep(2)
+                continue
 
             # ------------------------------------------------
             # SELECT PRODUCT
             # ------------------------------------------------
 
             try:
-
                 last_index = int(
                     cfg.get(
                         "last_product_index",
                         0
                     )
                 )
-
             except Exception:
-
                 last_index = 0
-
 
             product = products[
                 last_index % len(products)
             ]
 
-
             last_index = (
                 last_index + 1
             ) % len(products)
 
-
             cfg[
                 "last_product_index"
             ] = last_index
-
 
             save(
                 CFG,
                 cfg
             )
 
-
             log(
-                f"Starting Reel: {product.get('name', 'Unknown')}"
+                "Starting Reel: "
+                + product.get(
+                    "name",
+                    "Unknown"
+                )
             )
-
 
             # ------------------------------------------------
             # CREATE REEL
             # ------------------------------------------------
 
             try:
-
                 package_dir = create_reel_package(
                     product
                 )
 
-
                 STATE["created"] += 1
-
 
                 STATE["last_product"] = (
                     product.get(
@@ -1867,52 +1525,45 @@ def cycle():
                     )
                 )
 
-
                 STATE["last_package"] = (
                     package_dir.name
                 )
-
 
                 video_file = (
                     package_dir /
                     "video.mp4"
                 )
 
-
-                if video_file.exists() and video_file.stat().st_size > 10000:
-
+                if (
+                    video_file.exists()
+                    and video_file.stat().st_size > 10000
+                ):
                     STATE["last_video"] = (
                         package_dir.name
                         + "/video.mp4"
                     )
 
                     log(
-                        "Reel successfully created."
+                        "Reel video successfully created."
                     )
-
                 else:
-
                     STATE["last_video"] = None
 
                     log(
-                        "Package created, but video is missing/invalid."
+                        "Reel package created but video is missing/invalid."
                     )
 
-
             except Exception as e:
-
                 log(
                     "Reel creation error: "
                     + str(e)
                 )
-
 
             STATE["last_run"] = (
                 datetime.now().strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
             )
-
 
             # ------------------------------------------------
             # DISTRIBUTE POSTS THROUGH DAY
@@ -1926,38 +1577,36 @@ def cycle():
                 )
             )
 
-
             log(
                 f"Next Reel scheduled in approximately "
                 f"{interval // 3600} hour(s)."
             )
 
+            stopped = False
 
             for _ in range(interval):
-
                 time.sleep(1)
-
 
                 current_cfg = load(
                     CFG,
                     DEFAULT_CFG
                 )
 
-
                 if not current_cfg.get(
                     "enabled",
                     False
                 ):
-
                     log(
                         "Autopilot stopped."
                     )
 
+                    stopped = True
                     break
 
+            if stopped:
+                continue
 
         except Exception as e:
-
             log(
                 f"Autopilot error: {e}"
             )
@@ -1983,11 +1632,9 @@ app = FastAPI(
     response_class=HTMLResponse
 )
 def home():
-
     return HTMLResponse(
         """
 <!doctype html>
-
 <html>
 
 <head>
@@ -2114,11 +1761,6 @@ select {
     font-size:14px;
 }
 
-.error {
-    color:#b00020;
-    font-weight:700;
-}
-
 </style>
 
 </head>
@@ -2153,7 +1795,6 @@ onclick="run(0)">
 </button>
 
 </div>
-
 
 <div class="card">
 
@@ -2220,7 +1861,6 @@ SAVE SETTINGS
 
 </div>
 
-
 <div class="card">
 
 <h2>Latest Reel</h2>
@@ -2230,18 +1870,6 @@ No Reel created yet.
 </div>
 
 </div>
-
-
-<div class="card">
-
-<h2>System</h2>
-
-<p id="system">
-Checking system...
-</p>
-
-</div>
-
 
 <div class="card">
 
@@ -2260,7 +1888,7 @@ Checking system...
 </p>
 
 <p>
-<b>4.</b> Creates one 9:16 video.
+<b>4.</b> Creates a 9:16 video.
 </p>
 
 <p>
@@ -2268,16 +1896,14 @@ Checking system...
 </p>
 
 <p class="small">
-FFmpeg is supplied through imageio-ffmpeg.
+Designed for the Render Docker environment.
 </p>
 
 </div>
 
 </div>
 
-
 <script>
-
 
 async function getStatus() {
 
@@ -2289,13 +1915,11 @@ async function getStatus() {
         const data =
             await response.json();
 
-
         document.getElementById("s")
             .textContent =
             data.enabled
             ? "🟢 RUNNING"
             : "⚪ STOPPED";
-
 
         document.getElementById("x")
             .innerHTML =
@@ -2316,51 +1940,32 @@ async function getStatus() {
             + "<br><br>"
             + data.message;
 
-
         document.getElementById("p")
             .value =
             data.posts_per_day || 3;
-
 
         document.getElementById("m")
             .value =
             data.mode || "draft";
 
-
         document.getElementById("v")
             .value =
             data.voice || "en-IN-NeerjaNeural";
 
-
-        document.getElementById("system")
-            .innerHTML =
-            "FFmpeg: "
-            + (data.ffmpeg ? "✅ Available" : "❌ Missing")
-            + "<br>"
-            + "Video engine: imageio-ffmpeg / system FFmpeg"
-            + "<br>"
-            + "Resolution: 720 × 1280"
-            + "<br>"
-            + "FPS: 24";
-
-
         if (data.last_package) {
 
             let html =
-
                 '<div class="package">'
                 +
-                '<span class="badge">PACKAGE READY</span>'
+                '<span class="badge">PACKAGE</span>'
                 +
                 '<br><br>'
                 +
                 data.last_package;
 
-
             if (data.last_video) {
 
                 html +=
-
                     '<video '
                     +
                     'class="video" '
@@ -2377,9 +1982,7 @@ async function getStatus() {
                     +
                     '"></video>';
 
-
                 html +=
-
                     '<a '
                     +
                     'class="download" '
@@ -2395,20 +1998,9 @@ async function getStatus() {
                     '⬇ DOWNLOAD REEL'
                     +
                     '</a>';
-
-            } else {
-
-                html +=
-                    '<p class="error">'
-                    +
-                    'Video was not created. Check the activity log.'
-                    +
-                    '</p>';
             }
 
-
             html += '</div>';
-
 
             document.getElementById("latest")
                 .innerHTML =
@@ -2422,9 +2014,7 @@ async function getStatus() {
         document.getElementById("s")
             .textContent =
             "🔴 CONNECTION ERROR";
-
     }
-
 }
 
 
@@ -2448,7 +2038,6 @@ async function run(value) {
             }
         );
 
-
         setTimeout(
             getStatus,
             500
@@ -2461,9 +2050,7 @@ async function run(value) {
         alert(
             "Could not contact server."
         );
-
     }
-
 }
 
 
@@ -2474,14 +2061,11 @@ async function saveSettings() {
             document.getElementById("p").value
         );
 
-
     const mode =
         document.getElementById("m").value;
 
-
     const voice =
         document.getElementById("v").value;
-
 
     await fetch(
         "/api/config",
@@ -2508,14 +2092,11 @@ async function saveSettings() {
         }
     );
 
-
     alert(
         "Settings saved."
     );
 
-
     getStatus();
-
 }
 
 
@@ -2525,7 +2106,6 @@ setInterval(
     getStatus,
     3000
 );
-
 
 </script>
 
@@ -2547,7 +2127,6 @@ def status():
         CFG,
         DEFAULT_CFG
     )
-
 
     return JSONResponse({
 
@@ -2583,16 +2162,12 @@ def status():
             cfg.get(
                 "posts_per_day",
                 3
-            ),
-
-        "ffmpeg":
-            ffmpeg_available()
-
+            )
     })
 
 
 # ============================================================
-# VIDEO STREAM / DOWNLOAD
+# VIDEO DOWNLOAD / STREAM
 # ============================================================
 
 @app.get("/api/video")
@@ -2606,20 +2181,15 @@ def video(
         path
     ).resolve()
 
-
     drafts_root = (
         DRAFTS.resolve()
     )
 
-
     try:
-
         requested.relative_to(
             drafts_root
         )
-
     except ValueError:
-
         return JSONResponse(
             {
                 "error":
@@ -2628,9 +2198,7 @@ def video(
             status_code=403
         )
 
-
     if not requested.exists():
-
         return JSONResponse(
             {
                 "error":
@@ -2638,18 +2206,6 @@ def video(
             },
             status_code=404
         )
-
-
-    if requested.stat().st_size == 0:
-
-        return JSONResponse(
-            {
-                "error":
-                    "Video file is empty"
-            },
-            status_code=500
-        )
-
 
     return FileResponse(
         requested,
@@ -2671,7 +2227,6 @@ def drafts():
 
     packages = []
 
-
     if DRAFTS.exists():
 
         for folder in sorted(
@@ -2686,16 +2241,6 @@ def drafts():
                     "video.mp4"
                 )
 
-
-                video_valid = (
-
-                    video_file.exists()
-
-                    and video_file.stat().st_size > 10000
-
-                )
-
-
                 packages.append({
 
                     "name":
@@ -2705,7 +2250,11 @@ def drafts():
                         str(folder),
 
                     "video":
-                        video_valid,
+                        (
+                            video_file.exists()
+                            and
+                            video_file.stat().st_size > 10000
+                        ),
 
                     "video_size":
                         (
@@ -2720,165 +2269,15 @@ def drafts():
                             for file in folder.iterdir()
                             if file.is_file()
                         ]
-
                 })
 
-
     return {
-
         "count":
             len(packages),
 
         "packages":
             packages[:50]
-
     }
-
-
-# ============================================================
-# MANUAL REEL CREATION
-# ============================================================
-
-@app.post("/api/create")
-async def create_now():
-
-    if STATE["creating"]:
-
-        return JSONResponse(
-            {
-                "ok": False,
-                "error":
-                    "A Reel is already being created."
-            },
-            status_code=409
-        )
-
-
-    products = load(
-        QUEUE,
-        DEFAULT_PRODUCTS
-    )
-
-
-    if not products:
-
-        return JSONResponse(
-            {
-                "ok": False,
-                "error":
-                    "No products available."
-            },
-            status_code=400
-        )
-
-
-    cfg = load(
-        CFG,
-        DEFAULT_CFG
-    )
-
-
-    try:
-
-        index = int(
-            cfg.get(
-                "last_product_index",
-                0
-            )
-        )
-
-    except Exception:
-
-        index = 0
-
-
-    product = products[
-        index % len(products)
-    ]
-
-
-    cfg["last_product_index"] = (
-        index + 1
-    ) % len(products)
-
-
-    save(
-        CFG,
-        cfg
-    )
-
-
-    try:
-
-        package_dir = create_reel_package(
-            product
-        )
-
-
-        STATE["created"] += 1
-
-        STATE["last_product"] = product.get(
-            "name",
-            "Unknown"
-        )
-
-        STATE["last_package"] = (
-            package_dir.name
-        )
-
-
-        video_file = (
-            package_dir /
-            "video.mp4"
-        )
-
-
-        if (
-            video_file.exists()
-            and
-            video_file.stat().st_size > 10000
-        ):
-
-            STATE["last_video"] = (
-                package_dir.name
-                + "/video.mp4"
-            )
-
-            return {
-                "ok": True,
-                "package":
-                    package_dir.name,
-                "video":
-                    True,
-                "video_size":
-                    video_file.stat().st_size
-            }
-
-
-        return {
-            "ok": False,
-            "package":
-                package_dir.name,
-            "video": False,
-            "error":
-                "Package created but video generation failed."
-        }
-
-
-    except Exception as e:
-
-        log(
-            f"Manual creation error: {e}"
-        )
-
-        return JSONResponse(
-            {
-                "ok": False,
-                "error":
-                    str(e)
-            },
-            status_code=500
-        )
 
 
 # ============================================================
@@ -2897,7 +2296,6 @@ async def run(
         DEFAULT_CFG
     )
 
-
     enabled = bool(
         body.get(
             "enabled",
@@ -2905,37 +2303,28 @@ async def run(
         )
     )
 
-
     cfg["enabled"] = enabled
-
 
     save(
         CFG,
         cfg
     )
 
-
     if enabled:
-
         log(
             "START pressed. Autopilot enabled."
         )
-
     else:
-
         log(
             "STOP pressed. Autopilot disabled."
         )
 
-
     return {
-
         "ok":
             True,
 
         "enabled":
             enabled
-
     }
 
 
@@ -2954,7 +2343,6 @@ async def config(
         CFG,
         DEFAULT_CFG
     )
-
 
     if "posts_per_day" in body:
 
@@ -2976,7 +2364,6 @@ async def config(
 
             cfg["posts_per_day"] = 3
 
-
     if "mode" in body:
 
         if body["mode"] in [
@@ -2986,27 +2373,24 @@ async def config(
 
             cfg["mode"] = body["mode"]
 
-
     if "voice" in body:
 
         cfg["voice"] = str(
             body["voice"]
         )
 
-
     save(
         CFG,
         cfg
     )
 
-
     log(
         "Settings saved."
     )
 
-
     return {
-        "ok": True
+        "ok":
+            True
     }
 
 
@@ -3025,7 +2409,6 @@ async def add_product(
         QUEUE,
         DEFAULT_PRODUCTS
     )
-
 
     product = {
 
@@ -3068,34 +2451,27 @@ async def add_product(
                     ""
                 )
             )
-
     }
-
 
     products.append(
         product
     )
-
 
     save(
         QUEUE,
         products
     )
 
-
     log(
         f"Product added: {product['name']}"
     )
 
-
     return {
-
         "ok":
             True,
 
         "product":
             product
-
     }
 
 
@@ -3106,54 +2482,18 @@ async def add_product(
 @app.get("/api/products")
 def products():
 
-    products = load(
+    product_list = load(
         QUEUE,
         DEFAULT_PRODUCTS
     )
 
-
     return {
-
         "count":
-            len(products),
+            len(product_list),
 
         "products":
-            products
-
+            product_list
     }
-
-
-# ============================================================
-# ACTIVITY LOG
-# ============================================================
-
-@app.get("/api/log")
-def activity_log():
-
-    if not ACTIVITY_LOG.exists():
-
-        return {
-            "log": ""
-        }
-
-
-    try:
-
-        text = ACTIVITY_LOG.read_text(
-            encoding="utf-8"
-        )
-
-        return {
-            "log":
-                text[-10000:]
-        }
-
-    except Exception as e:
-
-        return {
-            "log":
-                str(e)
-        }
 
 
 # ============================================================
@@ -3163,11 +2503,7 @@ def activity_log():
 @app.get("/health")
 def health():
 
-    ffmpeg = get_ffmpeg()
-
-
     return {
-
         "ok":
             True,
 
@@ -3178,17 +2514,16 @@ def health():
             "6.0-video-fixed",
 
         "ffmpeg":
-            bool(ffmpeg),
+            ffmpeg_available(),
 
         "ffmpeg_path":
-            ffmpeg,
+            get_ffmpeg_path(),
 
         "worker_running":
             STATE["worker_running"],
 
         "creating":
             STATE["creating"]
-
     }
 
 
@@ -3222,7 +2557,6 @@ load(
     DEFAULT_PRODUCTS
 )
 
-
 start_worker()
 
 
@@ -3235,16 +2569,12 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-
         app,
-
         host="0.0.0.0",
-
         port=int(
             os.getenv(
                 "PORT",
                 "8080"
             )
         )
-
     )
