@@ -117,13 +117,20 @@ def load(path, default):
         save(path, default)
 
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(
+            path.read_text(
+                encoding="utf-8"
+            )
+        )
     except Exception:
         return default
 
 
 def save(path, obj):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
     path.write_text(
         json.dumps(
@@ -148,10 +155,16 @@ def log(message):
 
     line = f"[{timestamp}] {message}"
 
-    print(line, flush=True)
+    print(
+        line,
+        flush=True
+    )
 
     try:
-        with ACTIVITY_LOG.open("a", encoding="utf-8") as f:
+        with ACTIVITY_LOG.open(
+            "a",
+            encoding="utf-8"
+        ) as f:
             f.write(line + "\n")
     except Exception:
         pass
@@ -180,13 +193,19 @@ def wrap_text(text, width=28):
     current = ""
 
     for word in words:
+
         if len(current) + len(word) + 1 <= width:
+
             if current:
                 current += " "
+
             current += word
+
         else:
+
             if current:
                 lines.append(current)
+
             current = word
 
     if current:
@@ -195,18 +214,103 @@ def wrap_text(text, width=28):
     return "\n".join(lines)
 
 
+# ============================================================
+# IMPORTANT FFMPEG TEXT ESCAPING
+# ============================================================
+
 def escape_ffmpeg_text(text):
+    """
+    Escape text for FFmpeg drawtext.
+
+    IMPORTANT:
+    We intentionally DO NOT wrap the text in single quotes.
+
+    This prevents text such as:
+        don't
+        it's
+        you're
+
+    from breaking the FFmpeg filter parser.
+    """
+
     text = str(text)
 
-    text = text.replace("\\", "\\\\")
-    text = text.replace(":", "\\:")
-    text = text.replace("'", "\\'")
-    text = text.replace("%", "\\%")
-    text = text.replace("[", "\\[")
-    text = text.replace("]", "\\]")
-    text = text.replace("\n", " ")
+    text = text.replace(
+        "\\",
+        "\\\\"
+    )
+
+    text = text.replace(
+        ":",
+        "\\:"
+    )
+
+    text = text.replace(
+        ",",
+        "\\,"
+    )
+
+    text = text.replace(
+        "'",
+        "\\'"
+    )
+
+    text = text.replace(
+        "%",
+        "\\%"
+    )
+
+    text = text.replace(
+        "[",
+        "\\["
+    )
+
+    text = text.replace(
+        "]",
+        "\\]"
+    )
+
+    text = text.replace(
+        "\n",
+        " "
+    )
+
+    text = text.replace(
+        "\r",
+        " "
+    )
 
     return text
+
+
+def escape_ffmpeg_path(path):
+    """
+    Escape a filesystem path for an FFmpeg filter option.
+    """
+
+    value = str(path)
+
+    value = value.replace(
+        "\\",
+        "\\\\"
+    )
+
+    value = value.replace(
+        ":",
+        "\\:"
+    )
+
+    value = value.replace(
+        ",",
+        "\\,"
+    )
+
+    value = value.replace(
+        "'",
+        "\\'"
+    )
+
+    return value
 
 
 # ============================================================
@@ -214,30 +318,43 @@ def escape_ffmpeg_text(text):
 # ============================================================
 
 def ffmpeg_available():
-    return shutil.which("ffmpeg") is not None
+    return shutil.which(
+        "ffmpeg"
+    ) is not None
 
 
 def ffprobe_available():
-    return shutil.which("ffprobe") is not None
+    return shutil.which(
+        "ffprobe"
+    ) is not None
 
 
 def get_ffmpeg_version():
+
     if not ffmpeg_available():
         return "FFmpeg not found"
 
     try:
+
         result = subprocess.run(
-            ["ffmpeg", "-version"],
+            [
+                "ffmpeg",
+                "-version"
+            ],
             capture_output=True,
             text=True,
             timeout=10
         )
 
-        first_line = result.stdout.splitlines()[0]
+        lines = result.stdout.splitlines()
 
-        return first_line
+        if not lines:
+            return "Unknown FFmpeg version"
+
+        return lines[0]
 
     except Exception as e:
+
         return f"FFmpeg version error: {e}"
 
 
@@ -246,19 +363,32 @@ def get_ffmpeg_version():
 # ============================================================
 
 def random_hook(product):
+
     import random
 
-    price = product.get("price", "")
+    price = product.get(
+        "price",
+        ""
+    )
 
     hooks = [
+
         f"WAIT… why is this only {price}?",
+
         f"I found something actually useful for {price}.",
+
         "Okay, this might actually be worth buying.",
+
         "Why did nobody tell me about this before?",
+
         "This is one of those products you don't know you need until you see it.",
+
         "POV: you find something genuinely useful for under ₹500.",
+
         f"Would you buy this for {price}?",
+
         "This little product solves a surprisingly annoying problem."
+
     ]
 
     return random.choice(hooks)
@@ -269,11 +399,15 @@ def random_hook(product):
 # ============================================================
 
 def download_image(url, destination):
+
     if not url:
         return None
 
     try:
-        log("Downloading product image...")
+
+        log(
+            "Downloading product image..."
+        )
 
         request = urllib.request.Request(
             url,
@@ -290,22 +424,32 @@ def download_image(url, destination):
             data = response.read()
 
         if not data:
-            raise RuntimeError("Downloaded image is empty.")
+            raise RuntimeError(
+                "Downloaded image is empty."
+            )
 
-        destination.write_bytes(data)
+        destination.write_bytes(
+            data
+        )
 
         if destination.stat().st_size < 100:
-            raise RuntimeError("Downloaded image is invalid.")
+            raise RuntimeError(
+                "Downloaded image is invalid."
+            )
 
         log(
-            f"Product image downloaded: "
+            "Product image downloaded: "
             f"{destination.stat().st_size} bytes"
         )
 
         return destination
 
     except Exception as e:
-        log(f"Image download failed: {e}")
+
+        log(
+            f"Image download failed: {e}"
+        )
+
         return None
 
 
@@ -313,36 +457,54 @@ def download_image(url, destination):
 # PLACEHOLDER IMAGE
 # ============================================================
 
-def create_placeholder_image(product, output):
+def create_placeholder_image(
+    product,
+    output
+):
+
     try:
+
         from PIL import Image, ImageDraw, ImageFont
+
     except Exception as e:
-        log(f"Pillow unavailable: {e}")
+
+        log(
+            f"Pillow unavailable: {e}"
+        )
+
         return None
 
     width = 720
     height = 1280
 
     try:
+
         image = Image.new(
             "RGB",
             (width, height),
             (245, 245, 245)
         )
 
-        draw = ImageDraw.Draw(image)
+        draw = ImageDraw.Draw(
+            image
+        )
 
         font_path = (
-            "/usr/share/fonts/truetype/"
-            "dejavu/DejaVuSans-Bold.ttf"
+            "/usr/share/fonts/"
+            "truetype/"
+            "dejavu/"
+            "DejaVuSans-Bold.ttf"
         )
 
         normal_path = (
-            "/usr/share/fonts/truetype/"
-            "dejavu/DejaVuSans.ttf"
+            "/usr/share/fonts/"
+            "truetype/"
+            "dejavu/"
+            "DejaVuSans.ttf"
         )
 
         try:
+
             font_large = ImageFont.truetype(
                 font_path,
                 50
@@ -359,6 +521,7 @@ def create_placeholder_image(product, output):
             )
 
         except Exception:
+
             font_large = None
             font_medium = None
             font_small = None
@@ -392,7 +555,6 @@ def create_placeholder_image(product, output):
             font=font_small
         )
 
-        # Product card
         draw.rounded_rectangle(
             (40, 330, 680, 870),
             radius=35,
@@ -401,7 +563,10 @@ def create_placeholder_image(product, output):
             width=3
         )
 
-        wrapped = wrap_text(name, 20)
+        wrapped = wrap_text(
+            name,
+            20
+        )
 
         bbox = draw.multiline_textbbox(
             (0, 0),
@@ -411,8 +576,13 @@ def create_placeholder_image(product, output):
             align="center"
         )
 
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
+        text_width = (
+            bbox[2] - bbox[0]
+        )
+
+        text_height = (
+            bbox[3] - bbox[1]
+        )
 
         draw.multiline_text(
             (
@@ -455,20 +625,28 @@ def create_placeholder_image(product, output):
         )
 
         if not output.exists():
-            raise RuntimeError("Placeholder image was not created.")
+            raise RuntimeError(
+                "Placeholder image was not created."
+            )
 
         if output.stat().st_size < 1000:
-            raise RuntimeError("Placeholder image is too small.")
+            raise RuntimeError(
+                "Placeholder image is too small."
+            )
 
         log(
-            f"Placeholder image created: "
+            "Placeholder image created: "
             f"{output.stat().st_size} bytes"
         )
 
         return output
 
     except Exception as e:
-        log(f"Placeholder image failed: {e}")
+
+        log(
+            f"Placeholder image failed: {e}"
+        )
+
         return None
 
 
@@ -476,8 +654,14 @@ def create_placeholder_image(product, output):
 # TTS
 # ============================================================
 
-async def generate_tts_async(text, output, voice):
+async def generate_tts_async(
+    text,
+    output,
+    voice
+):
+
     try:
+
         import edge_tts
 
         communicate = edge_tts.Communicate(
@@ -493,18 +677,33 @@ async def generate_tts_async(text, output, voice):
             return False
 
         if output.stat().st_size < 1000:
-            log("TTS file was created but is too small.")
+
+            log(
+                "TTS file was created "
+                "but is too small."
+            )
+
             return False
 
         return True
 
     except Exception as e:
-        log(f"TTS error: {e}")
+
+        log(
+            f"TTS error: {e}"
+        )
+
         return False
 
 
-def generate_voiceover(text, output, voice):
+def generate_voiceover(
+    text,
+    output,
+    voice
+):
+
     try:
+
         return asyncio.run(
             generate_tts_async(
                 text,
@@ -514,7 +713,11 @@ def generate_voiceover(text, output, voice):
         )
 
     except Exception as e:
-        log(f"TTS runtime error: {e}")
+
+        log(
+            f"TTS runtime error: {e}"
+        )
+
         return False
 
 
@@ -523,8 +726,13 @@ def generate_voiceover(text, output, voice):
 # ============================================================
 
 def verify_video(path):
+
     if not path.exists():
-        log("VIDEO VERIFY: file does not exist.")
+
+        log(
+            "VIDEO VERIFY: file does not exist."
+        )
+
         return False
 
     size = path.stat().st_size
@@ -534,16 +742,24 @@ def verify_video(path):
     )
 
     if size < 10_000:
-        log("VIDEO VERIFY: file is too small.")
+
+        log(
+            "VIDEO VERIFY: file is too small."
+        )
+
         return False
 
     if not ffprobe_available():
+
         log(
-            "ffprobe unavailable; file-size verification passed."
+            "ffprobe unavailable; "
+            "file-size verification passed."
         )
+
         return True
 
     try:
+
         result = subprocess.run(
             [
                 "ffprobe",
@@ -561,13 +777,17 @@ def verify_video(path):
         )
 
         if result.returncode != 0:
+
             log(
                 "VIDEO VERIFY: ffprobe failed: "
                 + result.stderr[-1000:]
             )
+
             return False
 
-        data = json.loads(result.stdout)
+        data = json.loads(
+            result.stdout
+        )
 
         duration = float(
             data["format"].get(
@@ -596,9 +816,11 @@ def verify_video(path):
         return True
 
     except Exception as e:
+
         log(
             f"VIDEO VERIFY error: {e}"
         )
+
         return False
 
 
@@ -642,25 +864,39 @@ def create_video(
     duration = 17
 
     if not ffmpeg_available():
-        log("CRITICAL: FFmpeg is not installed.")
+
+        log(
+            "CRITICAL: FFmpeg is not installed."
+        )
+
         return False
 
     if not image_path.exists():
-        log("CRITICAL: input image does not exist.")
+
+        log(
+            "CRITICAL: input image does not exist."
+        )
+
         return False
 
     if image_path.stat().st_size < 1000:
-        log("CRITICAL: input image is invalid.")
+
+        log(
+            "CRITICAL: input image is invalid."
+        )
+
         return False
 
-    # --------------------------------------------------------
-    # Output is first created as .tmp.mp4.
-    # It will ONLY become video.mp4 after verification.
-    # --------------------------------------------------------
+    # ========================================================
+    # TEMP OUTPUT
+    # ========================================================
 
-    temp_output = output_path.with_suffix(".tmp.mp4")
+    temp_output = output_path.with_suffix(
+        ".tmp.mp4"
+    )
 
     try:
+
         if temp_output.exists():
             temp_output.unlink()
 
@@ -670,52 +906,93 @@ def create_video(
     except Exception:
         pass
 
-    # --------------------------------------------------------
-    # Build drawtext filters
-    # --------------------------------------------------------
+    # ========================================================
+    # BUILD DRAW TEXT FILTERS
+    # ========================================================
 
     filters = []
 
     current = 0
 
-    durations = [3, 3, 4, 3, 4]
+    durations = [
+        3,
+        3,
+        4,
+        3,
+        4
+    ]
 
     for i, scene in enumerate(scenes):
 
         start = current
-        end = current + durations[i]
 
-        text = escape_ffmpeg_text(
-            scene.get(
-                "on_screen_text",
-                ""
-            )
+        end = (
+            current +
+            durations[i]
         )
 
-        filters.append(
+        raw_text = scene.get(
+            "on_screen_text",
+            ""
+        )
+
+        text = escape_ffmpeg_text(
+            raw_text
+        )
+
+        # IMPORTANT:
+        #
+        # Do NOT use:
+        #
+        # text='{text}'
+        #
+        # because apostrophes in text such as
+        # "don't" can break FFmpeg.
+        #
+        # We also avoid between(t,0,3) because
+        # commas inside filter expressions can be
+        # problematic depending on parsing.
+        #
+        # Instead:
+        #
+        # enable=gte(t\,0)*lt(t\,3)
+
+        enable_expression = (
+            f"gte(t\\,{start})*lt(t\\,{end})"
+        )
+
+        drawtext_filter = (
             "drawtext="
             "fontfile=/usr/share/fonts/"
             "truetype/dejavu/"
             "DejaVuSans-Bold.ttf:"
-            f"text='{text}':"
+            f"text={text}:"
             "fontcolor=white:"
             "fontsize=42:"
             "borderw=4:"
             "bordercolor=black:"
             "x=(w-text_w)/2:"
             "y=h*0.78:"
-            f"enable='between(t,{start},{end})'"
+            f"enable={enable_expression}"
+        )
+
+        filters.append(
+            drawtext_filter
         )
 
         current = end
 
-    filters.append("format=yuv420p")
+    filters.append(
+        "format=yuv420p"
+    )
 
-    filter_string = ",".join(filters)
+    filter_string = ",".join(
+        filters
+    )
 
-    # --------------------------------------------------------
-    # FFmpeg command
-    # --------------------------------------------------------
+    # ========================================================
+    # FFMPEG COMMAND
+    # ========================================================
 
     cmd = [
         "ffmpeg",
@@ -729,7 +1006,6 @@ def create_video(
         "-threads",
         "1",
 
-        # Loop image forever.
         "-loop",
         "1",
 
@@ -747,6 +1023,7 @@ def create_video(
     )
 
     if has_audio:
+
         cmd.extend([
             "-i",
             str(audio_path)
@@ -802,7 +1079,6 @@ def create_video(
             "-ac",
             "2",
 
-            # Make audio exactly fit the video.
             "-af",
             "apad",
 
@@ -812,7 +1088,8 @@ def create_video(
     else:
 
         log(
-            "No valid voiceover. Creating video without audio."
+            "No valid voiceover. "
+            "Creating video without audio."
         )
 
     cmd.append(
@@ -842,7 +1119,10 @@ def create_video(
                 "utf-8",
                 errors="replace"
             )
-            if isinstance(result.stderr, bytes)
+            if isinstance(
+                result.stderr,
+                bytes
+            )
             else str(result.stderr)
         )
 
@@ -861,16 +1141,19 @@ def create_video(
         if not temp_output.exists():
 
             log(
-                "FFmpeg returned success but "
-                "temporary video does not exist."
+                "FFmpeg returned success "
+                "but temporary video does not exist."
             )
 
             return False
 
-        temp_size = temp_output.stat().st_size
+        temp_size = (
+            temp_output.stat().st_size
+        )
 
         log(
-            f"Temporary video size: {temp_size} bytes"
+            f"Temporary video size: "
+            f"{temp_size} bytes"
         )
 
         if temp_size < 10_000:
@@ -881,11 +1164,13 @@ def create_video(
 
             return False
 
-        # ----------------------------------------------------
-        # Verify before making it visible as video.mp4
-        # ----------------------------------------------------
+        # ====================================================
+        # VERIFY TEMP VIDEO
+        # ====================================================
 
-        if not verify_video(temp_output):
+        if not verify_video(
+            temp_output
+        ):
 
             log(
                 "Temporary video failed verification."
@@ -893,9 +1178,9 @@ def create_video(
 
             return False
 
-        # ----------------------------------------------------
-        # Atomic rename
-        # ----------------------------------------------------
+        # ====================================================
+        # ATOMIC RENAME
+        # ====================================================
 
         temp_output.replace(
             output_path
@@ -904,15 +1189,19 @@ def create_video(
         if not output_path.exists():
 
             log(
-                "Final video does not exist after rename."
+                "Final video does not exist "
+                "after rename."
             )
 
             return False
 
-        final_size = output_path.stat().st_size
+        final_size = (
+            output_path.stat().st_size
+        )
 
         log(
-            f"FINAL VIDEO CREATED: {final_size} bytes"
+            f"FINAL VIDEO CREATED: "
+            f"{final_size} bytes"
         )
 
         if final_size < 10_000:
@@ -923,7 +1212,9 @@ def create_video(
 
             return False
 
-        if not verify_video(output_path):
+        if not verify_video(
+            output_path
+        ):
 
             log(
                 "Final video failed verification."
@@ -945,7 +1236,8 @@ def create_video(
     except subprocess.TimeoutExpired:
 
         log(
-            "FFmpeg timed out after 300 seconds."
+            "FFmpeg timed out after "
+            "300 seconds."
         )
 
         return False
@@ -1025,49 +1317,79 @@ def create_reel_package(product):
 
             {
                 "time": "0-3s",
-                "visual": f"Strong close-up of the {name}.",
-                "voiceover": hook,
-                "on_screen_text": hook
+
+                "visual":
+                    f"Strong close-up of the {name}.",
+
+                "voiceover":
+                    hook,
+
+                "on_screen_text":
+                    hook
             },
 
             {
                 "time": "3-6s",
-                "visual": f"Show the {name} from different angles.",
-                "voiceover": (
-                    f"This is the {name}, "
-                    f"and it solves {why}."
-                ),
-                "on_screen_text": name
+
+                "visual":
+                    f"Show the {name} from different angles.",
+
+                "voiceover":
+                    (
+                        f"This is the {name}, "
+                        f"and it solves {why}."
+                    ),
+
+                "on_screen_text":
+                    name
             },
 
             {
                 "time": "6-10s",
-                "visual": "Show the product being used.",
-                "voiceover": (
-                    "The best part is how simple "
-                    "it is to use."
-                ),
-                "on_screen_text": "Simple. Useful. Practical."
+
+                "visual":
+                    "Show the product being used.",
+
+                "voiceover":
+                    (
+                        "The best part is how simple "
+                        "it is to use."
+                    ),
+
+                "on_screen_text":
+                    "Simple. Useful. Practical."
             },
 
             {
                 "time": "10-13s",
-                "visual": "Show the result after using the product.",
-                "voiceover": (
-                    f"And at around {price}, "
-                    "it could be worth checking out."
-                ),
-                "on_screen_text": f"Example price: {price}"
+
+                "visual":
+                    "Show the result after using the product.",
+
+                "voiceover":
+                    (
+                        f"And at around {price}, "
+                        "it could be worth checking out."
+                    ),
+
+                "on_screen_text":
+                    f"Example price: {price}"
             },
 
             {
                 "time": "13-17s",
-                "visual": "Clean final product shot.",
-                "voiceover": (
-                    f"Save this for later and follow "
-                    f"{handle} for more useful finds."
-                ),
-                "on_screen_text": f"Follow {handle}"
+
+                "visual":
+                    "Clean final product shot.",
+
+                "voiceover":
+                    (
+                        f"Save this for later and follow "
+                        f"{handle} for more useful finds."
+                    ),
+
+                "on_screen_text":
+                    f"Follow {handle}"
             }
         ]
 
@@ -1146,61 +1468,103 @@ Prices and availability can change.
         # ====================================================
 
         script_lines = [
+
             f"REEL: {name}",
+
             "=" * 60,
+
             f"CATEGORY: {category}",
+
             f"EXAMPLE PRICE: {price}",
+
             "",
+
             "CONCEPT",
-            f"Fast-paced product discovery Reel showing why "
-            f"the {name} is useful and worth considering.",
+
+            (
+                f"Fast-paced product discovery Reel "
+                f"showing why the {name} is useful "
+                f"and worth considering."
+            ),
+
             "",
+
             "SCENE PLAN",
+
             "-" * 60
         ]
 
         for scene in scenes:
 
             script_lines.extend([
+
                 "",
+
                 f"{scene['time']} — VISUAL",
+
                 scene["visual"],
+
                 "",
+
                 "VOICEOVER:",
+
                 scene["voiceover"],
+
                 "",
+
                 "ON-SCREEN TEXT:",
+
                 scene["on_screen_text"]
             ])
 
         script_lines.extend([
+
             "",
+
             "FULL VOICEOVER",
+
             "-" * 60,
+
             voiceover,
+
             "",
+
             "CAPTION",
+
             "-" * 60,
+
             caption
         ])
 
-        (package_dir / "script.txt").write_text(
-            "\n".join(script_lines).strip(),
+        (
+            package_dir /
+            "script.txt"
+        ).write_text(
+            "\n".join(
+                script_lines
+            ).strip(),
             encoding="utf-8"
         )
 
-        (package_dir / "caption.txt").write_text(
+        (
+            package_dir /
+            "caption.txt"
+        ).write_text(
             caption.strip(),
             encoding="utf-8"
         )
 
-        (package_dir / "voiceover.txt").write_text(
+        (
+            package_dir /
+            "voiceover.txt"
+        ).write_text(
             voiceover.strip(),
             encoding="utf-8"
         )
 
         save(
-            package_dir / "reel_plan.json",
+            package_dir /
+            "reel_plan.json",
             {
                 "product": product,
                 "duration_seconds": 17,
@@ -1222,12 +1586,14 @@ Prices and availability can change.
         downloaded = None
 
         if image_url:
+
             downloaded = download_image(
                 image_url,
                 image_path
             )
 
         if not downloaded:
+
             downloaded = create_placeholder_image(
                 product,
                 image_path
@@ -1297,34 +1663,63 @@ Prices and availability can change.
         # ====================================================
 
         metadata = {
-            "created_at": datetime.now().isoformat(),
-            "handle": handle,
-            "product": product,
+
+            "created_at":
+                datetime.now().isoformat(),
+
+            "handle":
+                handle,
+
+            "product":
+                product,
+
             "reel": {
-                "duration_seconds": 17,
-                "format": "9:16",
-                "resolution": "720x1280",
-                "hook": hook,
-                "voiceover": voiceover,
-                "scenes": scenes
+
+                "duration_seconds":
+                    17,
+
+                "format":
+                    "9:16",
+
+                "resolution":
+                    "720x1280",
+
+                "hook":
+                    hook,
+
+                "voiceover":
+                    voiceover,
+
+                "scenes":
+                    scenes
             },
-            "caption": caption,
-            "status": (
-                "ready"
-                if video_success
-                else "video_failed"
-            ),
-            "video_verified": bool(
-                video_success
-            ),
+
+            "caption":
+                caption,
+
+            "status":
+                (
+                    "ready"
+                    if video_success
+                    else "video_failed"
+                ),
+
+            "video_verified":
+                bool(video_success),
+
             "publishing": {
-                "instagram": False,
-                "published": False
+
+                "instagram":
+                    False,
+
+                "published":
+                    False
             }
         }
 
         save(
-            package_dir / "metadata.json",
+            package_dir /
+            "metadata.json",
             metadata
         )
 
@@ -1374,7 +1769,10 @@ IMPORTANT:
 Price and availability must be checked before publishing.
 """
 
-        (package_dir / "README.txt").write_text(
+        (
+            package_dir /
+            "README.txt"
+        ).write_text(
             readme,
             encoding="utf-8"
         )
@@ -1382,13 +1780,14 @@ Price and availability must be checked before publishing.
         if video_success:
 
             log(
-                f"REEL READY: {package_dir.name}"
+                f"REEL READY: "
+                f"{package_dir.name}"
             )
 
         else:
 
             log(
-                f"REEL CREATED BUT VIDEO FAILED: "
+                "REEL CREATED BUT VIDEO FAILED: "
                 f"{package_dir.name}"
             )
 
@@ -1426,14 +1825,13 @@ def cycle():
             ):
 
                 time.sleep(2)
-                continue
 
-            # Do not start another generation
-            # while one is already running.
+                continue
 
             if STATE["creating"]:
 
                 time.sleep(2)
+
                 continue
 
             products = load(
@@ -1448,9 +1846,11 @@ def cycle():
                 )
 
                 time.sleep(10)
+
                 continue
 
             try:
+
                 posts_per_day = int(
                     cfg.get(
                         "posts_per_day",
@@ -1459,6 +1859,7 @@ def cycle():
                 )
 
             except Exception:
+
                 posts_per_day = 3
 
             posts_per_day = max(
@@ -1470,17 +1871,21 @@ def cycle():
             )
 
             try:
+
                 last_index = int(
                     cfg.get(
                         "last_product_index",
                         0
                     )
                 )
+
             except Exception:
+
                 last_index = 0
 
             product = products[
-                last_index % len(products)
+                last_index %
+                len(products)
             ]
 
             cfg["last_product_index"] = (
@@ -1493,7 +1898,7 @@ def cycle():
             )
 
             log(
-                f"Starting Reel: "
+                "Starting Reel: "
                 f"{product.get('name', 'Unknown')}"
             )
 
@@ -1565,7 +1970,7 @@ def cycle():
             )
 
             log(
-                f"Next Reel in approximately "
+                "Next Reel in approximately "
                 f"{interval // 3600} hour(s)."
             )
 
@@ -1617,7 +2022,8 @@ app = FastAPI(
 )
 def home():
 
-    return HTMLResponse("""
+    return HTMLResponse(
+"""
 <!doctype html>
 
 <html>
@@ -1938,7 +2344,6 @@ async function getStatus() {
             data.voice ||
             "en-IN-NeerjaNeural";
 
-
         if (data.last_package) {
 
             let html =
@@ -1949,7 +2354,6 @@ async function getStatus() {
                 '<br><br>'
                 +
                 data.last_package;
-
 
             if (data.last_video) {
 
@@ -2009,7 +2413,6 @@ async function getStatus() {
                 html;
         }
 
-
         try {
 
             const health =
@@ -2036,7 +2439,33 @@ async function getStatus() {
                     h.ffprobe
                     ? "✅ Available"
                     : "❌ Missing"
-                );
+                )
+                +
+                "<br>"
+                +
+                "Pillow: "
+                +
+                (
+                    h.pillow
+                    ? "✅ Available"
+                    : "❌ Missing"
+                )
+                +
+                "<br>"
+                +
+                "TTS package: "
+                +
+                (
+                    h.edge_tts
+                    ? "✅ Available"
+                    : "❌ Missing"
+                )
+                +
+                "<br>"
+                +
+                "Products: "
+                +
+                h.products;
 
         } catch(e) {}
 
@@ -2059,10 +2488,12 @@ async function run(value) {
             "/api/run",
             {
                 method:"POST",
+
                 headers:{
                     "Content-Type":
                         "application/json"
                 },
+
                 body:JSON.stringify({
                     enabled:value
                 })
@@ -2136,7 +2567,8 @@ setInterval(
 </body>
 
 </html>
-""")
+"""
+    )
 
 
 # ============================================================
@@ -2149,6 +2581,11 @@ def status():
     cfg = load(
         CFG,
         DEFAULT_CFG
+    )
+
+    products_data = load(
+        QUEUE,
+        DEFAULT_PRODUCTS
     )
 
     return JSONResponse({
@@ -2185,7 +2622,10 @@ def status():
             cfg.get(
                 "posts_per_day",
                 3
-            )
+            ),
+
+        "products":
+            len(products_data)
     })
 
 
@@ -2207,9 +2647,11 @@ def video(
     ).resolve()
 
     try:
+
         requested.relative_to(
             drafts_root
         )
+
     except ValueError:
 
         return JSONResponse(
@@ -2250,7 +2692,9 @@ def video(
             status_code=422
         )
 
-    if not verify_video(requested):
+    if not verify_video(
+        requested
+    ):
 
         return JSONResponse(
             {
@@ -2300,12 +2744,17 @@ def drafts():
             if video_file.exists():
 
                 try:
+
                     video_valid = (
                         video_file.stat().st_size
                         > 10_000
-                        and verify_video(video_file)
+                        and verify_video(
+                            video_file
+                        )
                     )
+
                 except Exception:
+
                     video_valid = False
 
             packages.append({
@@ -2328,8 +2777,11 @@ def drafts():
             })
 
     return {
-        "count": len(packages),
-        "packages": packages[:50]
+        "count":
+            len(packages),
+
+        "packages":
+            packages[:50]
     }
 
 
@@ -2338,7 +2790,9 @@ def drafts():
 # ============================================================
 
 @app.post("/api/run")
-async def run(req: Request):
+async def run(
+    req: Request
+):
 
     body = await req.json()
 
@@ -2364,18 +2818,23 @@ async def run(req: Request):
     if enabled:
 
         log(
-            "START pressed. Autopilot enabled."
+            "START pressed. "
+            "Autopilot enabled."
         )
 
     else:
 
         log(
-            "STOP pressed. Autopilot disabled."
+            "STOP pressed. "
+            "Autopilot disabled."
         )
 
     return {
-        "ok": True,
-        "enabled": enabled
+        "ok":
+            True,
+
+        "enabled":
+            enabled
     }
 
 
@@ -2384,7 +2843,9 @@ async def run(req: Request):
 # ============================================================
 
 @app.post("/api/config")
-async def config(req: Request):
+async def config(
+    req: Request
+):
 
     body = await req.json()
 
@@ -2420,7 +2881,9 @@ async def config(req: Request):
             "publish"
         ]:
 
-            cfg["mode"] = body["mode"]
+            cfg["mode"] = (
+                body["mode"]
+            )
 
     if "voice" in body:
 
@@ -2438,7 +2901,8 @@ async def config(req: Request):
     )
 
     return {
-        "ok": True
+        "ok":
+            True
     }
 
 
@@ -2447,7 +2911,9 @@ async def config(req: Request):
 # ============================================================
 
 @app.post("/api/product")
-async def add_product(req: Request):
+async def add_product(
+    req: Request
+):
 
     body = await req.json()
 
@@ -2509,12 +2975,16 @@ async def add_product(req: Request):
     )
 
     log(
-        f"Product added: {product['name']}"
+        f"Product added: "
+        f"{product['name']}"
     )
 
     return {
-        "ok": True,
-        "product": product
+        "ok":
+            True,
+
+        "product":
+            product
     }
 
 
@@ -2531,8 +3001,11 @@ def products():
     )
 
     return {
-        "count": len(products),
-        "products": products
+        "count":
+            len(products),
+
+        "products":
+            products
     }
 
 
@@ -2543,13 +3016,63 @@ def products():
 @app.get("/health")
 def health():
 
+    # Check Pillow
+    try:
+
+        import PIL
+
+        pillow_available = True
+
+    except Exception:
+
+        pillow_available = False
+
+    # Check edge-tts
+    try:
+
+        import edge_tts
+
+        tts_available = True
+
+    except Exception:
+
+        tts_available = False
+
+    # Count products
+    products_data = load(
+        QUEUE,
+        DEFAULT_PRODUCTS
+    )
+
     return {
-        "ok": True,
-        "service": "waititsonsale-autopilot",
-        "version": "6.0-verified-video",
-        "ffmpeg": ffmpeg_available(),
-        "ffprobe": ffprobe_available(),
-        "ffmpeg_version": get_ffmpeg_version(),
+
+        "ok":
+            True,
+
+        "service":
+            "waititsonsale-autopilot",
+
+        "version":
+            "6.1-verified-video",
+
+        "ffmpeg":
+            ffmpeg_available(),
+
+        "ffprobe":
+            ffprobe_available(),
+
+        "ffmpeg_version":
+            get_ffmpeg_version(),
+
+        "pillow":
+            pillow_available,
+
+        "edge_tts":
+            tts_available,
+
+        "products":
+            len(products_data),
+
         "worker_running":
             STATE["worker_running"]
     }
